@@ -5,12 +5,17 @@ const router = createRouter({
   routes: [
     {
       path: '/',
-      redirect: '/tree',
+      redirect: '/chat',
     },
     {
       path: '/tree',
       name: 'Tree',
       component: () => import('../views/TreePage.vue'),
+    },
+    {
+      path: '/chat',
+      name: 'Chat',
+      component: () => import('../views/ChatPage.vue'),
     },
   ],
 })
