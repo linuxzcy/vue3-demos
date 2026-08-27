@@ -1,0 +1,27 @@
+{
+  "name": "vue-test-demos",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vue-tsc -b && vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@ant-design/icons-vue": "^7.0.1",
+    "ant-design-vue": "^4.2.6",
+    "pinia": "^4.0.3",
+    "vue": "^3.5.41",
+    "vue-draggable-plus": "^0.6.1",
+    "vue-router": "^5.2.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.13.3",
+    "@vitejs/plugin-vue": "^6.0.8",
+    "@vue/tsconfig": "^0.9.1",
+    "typescript": "~6.0.2",
+    "vite": "^8.2.2",
+    "vue-tsc": "^3.3.11"
+  }
+}
