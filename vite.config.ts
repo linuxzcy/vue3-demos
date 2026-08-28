@@ -7,11 +7,18 @@ import { resolve } from 'path'
 const tinymcePublic = resolve('public/tinymce')
 mkdirSync(tinymcePublic, { recursive: true })
 
-const langSrc = resolve('node_modules/tinymce-i18n/langs7/zh_CN.js')
+const langSrc = resolve('node_modules/tinymce-i18n/langs/zh_CN.js')
 const langDestDir = resolve(tinymcePublic, 'langs')
 if (existsSync(langSrc)) {
   mkdirSync(langDestDir, { recursive: true })
   cpSync(langSrc, resolve(langDestDir, 'zh_CN.js'))
+} else {
+  // TinyMCE 6/7 语言包兜底
+  const lang7 = resolve('node_modules/tinymce-i18n/langs7/zh_CN.js')
+  if (existsSync(lang7)) {
+    mkdirSync(langDestDir, { recursive: true })
+    cpSync(lang7, resolve(langDestDir, 'zh_CN.js'))
+  }
 }
 
 const skinsSrc = resolve('node_modules/tinymce/skins')

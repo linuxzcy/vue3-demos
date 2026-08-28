@@ -2,6 +2,7 @@
 import { onMounted, ref } from 'vue'
 import Editor from '@tinymce/tinymce-vue'
 
+// 自托管 TinyMCE 6（MIT）：无需 license_key，可闭源商用
 import 'tinymce/tinymce'
 import 'tinymce/themes/silver'
 import 'tinymce/icons/default'
@@ -26,6 +27,8 @@ import 'tinymce/plugins/anchor'
 import 'tinymce/plugins/visualblocks'
 import 'tinymce/plugins/visualchars'
 
+import 'tinymce/skins/ui/oxide/skin.min.css'
+
 const content = ref('<p>在此编辑富文本内容...</p>')
 const previewHtml = ref('')
 
@@ -33,11 +36,12 @@ const editorInit = {
   height: 480,
   language: 'zh_CN',
   language_url: '/tinymce/langs/zh_CN.js',
-  skin_url: '/tinymce/skins/ui/oxide',
+  // 自托管皮肤：CSS 已 import，编辑器内 content 用 public 路径
+  skin: false,
   content_css: '/tinymce/skins/content/default/content.min.css',
   promotion: false,
   branding: false,
-  license_key: 'gpl',
+  // TinyMCE 6 = MIT，不需要 license_key，也不会弹 GPL 提示
   menubar: 'file edit view insert format tools table help',
   plugins: [
     'advlist', 'autolink', 'lists', 'link', 'image', 'media', 'table',
@@ -122,12 +126,13 @@ onMounted(syncPreview)
   <div class="tinymce-page">
     <a-row :gutter="16">
       <a-col :xs="24" :lg="16">
-        <a-card title="TinyMCE 富文本编辑器（自托管 · 无需 License Key）" size="small">
+        <a-card title="TinyMCE 6 富文本（MIT · 无 License 提示）" size="small">
           <a-alert
-            type="info"
+            type="success"
             show-icon
-            message="使用 npm 自托管 TinyMCE，设置 license_key: 'gpl'，无需 Cloud API Key"
             style="margin-bottom: 12px"
+            message="已使用 TinyMCE 6（MIT 协议）"
+            description="MIT 可闭源商用、次数不限、无需 license_key。TinyMCE 7/8 改为 GPL，必须写 license_key:'gpl' 或买商业授权，才会一直提示。"
           />
           <Editor v-model="content" :init="editorInit" />
           <a-space style="margin-top: 12px">
@@ -138,14 +143,13 @@ onMounted(syncPreview)
       </a-col>
 
       <a-col :xs="24" :lg="8">
-        <a-card title="功能说明" size="small">
+        <a-card title="License 说明" size="small">
           <a-descriptions :column="1" size="small" bordered>
+            <a-descriptions-item label="当前版本">TinyMCE 6.8.x（MIT）</a-descriptions-item>
+            <a-descriptions-item label="次数限制">无，无限次</a-descriptions-item>
+            <a-descriptions-item label="闭源商用">可以（MIT）</a-descriptions-item>
             <a-descriptions-item label="中文界面">zh_CN 语言包</a-descriptions-item>
-            <a-descriptions-item label="图片上传">images_upload_handler + 拖拽粘贴</a-descriptions-item>
-            <a-descriptions-item label="音视频">media 插件 + 文件选择器</a-descriptions-item>
-            <a-descriptions-item label="表格">table 插件</a-descriptions-item>
-            <a-descriptions-item label="代码">codesample 语法高亮</a-descriptions-item>
-            <a-descriptions-item label="License">GPL 自托管，无 Cloud Key</a-descriptions-item>
+            <a-descriptions-item label="图片/音视频">上传 handler + media 插件</a-descriptions-item>
           </a-descriptions>
         </a-card>
 
