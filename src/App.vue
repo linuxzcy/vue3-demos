@@ -11,6 +11,7 @@ const navItems = [
   { path: '/websocket', label: 'WebSocket' },
   { path: '/sse', label: 'SSE 流式' },
   { path: '/tinymce', label: 'TinyMCE' },
+  { path: '/amap', label: '高德地图' },
 ]
 
 const selectedKey = computed(() => route.path)

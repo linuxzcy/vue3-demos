@@ -14,6 +14,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@amap/amap-jsapi-loader": "^1.0.1",
     "@ant-design/icons-vue": "^7.0.1",
     "@tinymce/tinymce-vue": "^5.1.1",
     "ant-design-vue": "^4.2.6",
