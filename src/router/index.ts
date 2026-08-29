@@ -10,6 +10,7 @@ const router = createRouter({
     { path: '/sse', name: 'SSE', component: () => import('../views/SsePage.vue') },
     { path: '/tinymce', name: 'TinyMCE', component: () => import('../views/TinyMcePage.vue') },
     { path: '/amap', name: 'Amap', component: () => import('../views/AmapPage.vue') },
+    { path: '/scroll-spy', name: 'ScrollSpy', component: () => import('../views/ScrollSpyPage.vue') },
   ],
 })
 

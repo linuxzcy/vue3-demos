@@ -36,6 +36,10 @@ let driving: any = null
 const searchKeyword = ref('')
 const searchTips = ref<{ name: string; district: string; location?: any; address?: string }[]>([])
 const tipOpen = ref(false)
+const poiResults = ref<
+  { id: string; name: string; address: string; lng: number; lat: number; tel?: string; type?: string }[]
+>([])
+const navSteps = ref<{ instruction: string; distance: number; time: number; road?: string }[]>([])
 
 const selected = reactive({
   lng: null as number | null,
@@ -72,7 +76,8 @@ async function initMap() {
     map.addControl(new AMap.ToolBar({ position: { right: '16px', bottom: '80px' } }))
 
     geocoder = new AMap.Geocoder({ city: '全国' })
-    placeSearch = new AMap.PlaceSearch({ map, city: '全国', pageSize: 8 })
+    // map 不自动打点，由我们自己展示详细 POI 列表与经纬度
+    placeSearch = new AMap.PlaceSearch({ city: '全国', pageSize: 10 })
     autoComplete = new AMap.AutoComplete({ city: '全国' })
     driving = new AMap.Driving({ map: null, policy: AMap.DrivingPolicy.LEAST_TIME })
 
@@ -207,6 +212,16 @@ function selectTip(tip: { name: string; district: string; location?: any }) {
     const lat = tip.location.lat
     pickLocation(lng, lat)
     map.setZoom(15)
+    // 联想结果也补一条详情，方便看经纬度
+    poiResults.value = [
+      {
+        id: `tip-${lng}-${lat}`,
+        name: tip.name,
+        address: `${tip.district || ''}`.trim() || tip.name,
+        lng,
+        lat,
+      },
+    ]
   } else {
     doPlaceSearch()
   }
@@ -218,13 +233,41 @@ function doPlaceSearch() {
   tipOpen.value = false
   placeSearch.search(kw, (status: string, result: any) => {
     if (status === 'complete' && result.poiList?.pois?.length) {
-      const poi = result.poiList.pois[0]
-      pickLocation(poi.location.lng, poi.location.lat)
+      poiResults.value = result.poiList.pois.map((poi: any) => ({
+        id: poi.id,
+        name: poi.name,
+        address: poi.address || poi.pname + poi.cityname + poi.adname,
+        lng: poi.location.lng,
+        lat: poi.location.lat,
+        tel: poi.tel,
+        type: poi.type,
+      }))
+      // 默认选中第一条，并把经纬度渲染到页面
+      const first = poiResults.value[0]
+      pickLocation(first.lng, first.lat)
       map.setZoom(15)
+      message.success(`找到 ${poiResults.value.length} 个详细位置`)
     } else {
+      poiResults.value = []
       message.warning('未找到相关地点')
     }
   })
+}
+
+function selectPoi(poi: { name: string; address: string; lng: number; lat: number }) {
+  searchKeyword.value = poi.name
+  pickLocation(poi.lng, poi.lat)
+  map.setZoom(16)
+}
+
+/** 把当前选中点设为导航起点/终点 */
+function useSelectedAs(type: 'start' | 'end') {
+  if (selected.lng == null || selected.lat == null) {
+    message.warning('请先搜索或右键选择位置')
+    return
+  }
+  setRoutePoint(type, selected.lng, selected.lat)
+  message.success(type === 'start' ? '已设为起点' : '已设为终点')
 }
 
 function parsePoint(input: string): Promise<[number, number] | null> {
@@ -284,7 +327,16 @@ async function planRoute() {
     const km = (route.distance / 1000).toFixed(1)
     const min = Math.round(route.time / 60)
     routeInfo.value = `驾车约 ${km} 公里 · 预计 ${min} 分钟`
-    message.success('路线已规划')
+
+    // 导航步骤（详细路线指引）
+    navSteps.value = (route.steps || []).map((step: any) => ({
+      instruction: step.instruction || step.road || '行驶',
+      distance: step.distance || 0,
+      time: step.time || 0,
+      road: step.road,
+    }))
+
+    message.success('路线轨迹与导航步骤已生成')
   })
 }
 
@@ -294,6 +346,7 @@ function clearRoute() {
     routePolyline = null
   }
   routeInfo.value = ''
+  navSteps.value = []
 }
 
 function clearLogistics() {
@@ -407,8 +460,8 @@ onBeforeUnmount(() => {
           <div class="search-box">
             <a-input-search
               v-model:value="searchKeyword"
-              placeholder="搜索小区、写字楼、地名..."
-              enter-button
+              placeholder="搜索小区、写字楼、详细地址..."
+              enter-button="搜索"
               :disabled="!mapReady"
               @search="doPlaceSearch"
               @change="onSearchInput"
@@ -427,9 +480,23 @@ onBeforeUnmount(() => {
               </div>
             </div>
           </div>
+
+          <div v-if="poiResults.length" class="poi-list">
+            <div class="poi-title">详细搜索结果（含经纬度）</div>
+            <div
+              v-for="poi in poiResults"
+              :key="poi.id"
+              class="poi-item"
+              @click="selectPoi(poi)"
+            >
+              <div class="tip-name">{{ poi.name }}</div>
+              <div class="tip-dist">{{ poi.address }}</div>
+              <div class="coord">{{ poi.lng.toFixed(6) }}, {{ poi.lat.toFixed(6) }}</div>
+            </div>
+          </div>
         </a-card>
 
-        <a-card title="选中位置（右键地图）" size="small" class="mt">
+        <a-card title="选中位置 / 经纬度" size="small" class="mt">
           <a-descriptions :column="1" size="small" bordered>
             <a-descriptions-item label="经纬度">
               <span class="coord">{{ selectedText }}</span>
@@ -438,12 +505,16 @@ onBeforeUnmount(() => {
               {{ selected.address || '-' }}
             </a-descriptions-item>
           </a-descriptions>
+          <a-space wrap style="margin-top: 8px">
+            <a-button size="small" :disabled="!mapReady" @click="useSelectedAs('start')">设为导航起点</a-button>
+            <a-button size="small" :disabled="!mapReady" @click="useSelectedAs('end')">设为导航终点</a-button>
+          </a-space>
           <p class="hint">
-            <AimOutlined /> 右键菜单：放大 / 缩小 / 选择位置 / 设为起终点
+            <AimOutlined /> 搜索选点 / 右键「选择位置」都会回填经纬度
           </p>
         </a-card>
 
-        <a-card title="路线规划（驾车轨迹）" size="small" class="mt">
+        <a-card title="路线规划 + 导航步骤" size="small" class="mt">
           <a-form layout="vertical" size="small">
             <a-form-item label="起点">
               <a-input v-model:value="routeForm.start" placeholder="地名或 经度,纬度" />
@@ -454,13 +525,23 @@ onBeforeUnmount(() => {
           </a-form>
           <a-space wrap>
             <a-button type="primary" :disabled="!mapReady" @click="planRoute">
-              <CarOutlined /> 规划路线
+              <CarOutlined /> 规划路线 / 导航
             </a-button>
             <a-button :disabled="!mapReady" @click="clearRoute">清除路线</a-button>
           </a-space>
           <p v-if="routeInfo" class="route-info">{{ routeInfo }}</p>
+          <div v-if="navSteps.length" class="nav-steps">
+            <div class="poi-title">导航指引</div>
+            <ol>
+              <li v-for="(step, i) in navSteps" :key="i">
+                {{ step.instruction }}
+                <span class="tip-dist">
+                  （{{ (step.distance / 1000).toFixed(2) }} km）
+                </span>
+              </li>
+            </ol>
+          </div>
         </a-card>
-
         <a-card title="物流快递轨迹" size="small" class="mt">
           <a-timeline>
             <a-timeline-item
@@ -547,6 +628,47 @@ onBeforeUnmount(() => {
 .tip-dist {
   font-size: 12px;
   color: #999;
+}
+
+.poi-list {
+  margin-top: 12px;
+  max-height: 220px;
+  overflow: auto;
+  border: 1px solid #f0f0f0;
+  border-radius: 8px;
+}
+
+.poi-title {
+  font-size: 12px;
+  color: #666;
+  padding: 8px 10px 4px;
+  font-weight: 600;
+}
+
+.poi-item {
+  padding: 8px 10px;
+  border-top: 1px solid #f5f5f5;
+  cursor: pointer;
+}
+
+.poi-item:hover {
+  background: #f5faff;
+}
+
+.nav-steps {
+  margin-top: 10px;
+  max-height: 200px;
+  overflow: auto;
+  background: #fafafa;
+  border-radius: 8px;
+  padding: 4px 8px 8px;
+}
+
+.nav-steps ol {
+  margin: 0;
+  padding-left: 20px;
+  font-size: 12px;
+  line-height: 1.6;
 }
 
 .coord {

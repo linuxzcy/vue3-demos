@@ -12,6 +12,7 @@ const navItems = [
   { path: '/sse', label: 'SSE 流式' },
   { path: '/tinymce', label: 'TinyMCE' },
   { path: '/amap', label: '高德地图' },
+  { path: '/scroll-spy', label: '目录联动' },
 ]
 
 const selectedKey = computed(() => route.path)
