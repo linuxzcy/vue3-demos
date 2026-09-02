@@ -12,6 +12,7 @@ const router = createRouter({
     { path: '/amap', name: 'Amap', component: () => import('../views/AmapPage.vue') },
     { path: '/scroll-spy', name: 'ScrollSpy', component: () => import('../views/ScrollSpyPage.vue') },
     { path: '/excel', name: 'Excel', component: () => import('../views/ExcelParsePage.vue') },
+    { path: '/chunk-upload', name: 'ChunkUpload', component: () => import('../views/ChunkUploadPage.vue') },
   ],
 })
 

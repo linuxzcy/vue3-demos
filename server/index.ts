@@ -3,6 +3,7 @@ import cors from 'cors'
 import { createServer } from 'http'
 import { WebSocketServer, WebSocket } from 'ws'
 import { randomUUID } from 'crypto'
+import { createChunkUploadRouter } from './chunkUpload'
 
 const app = express()
 const server = createServer(app)
@@ -11,6 +12,7 @@ const wss = new WebSocketServer({ server, path: '/ws' })
 app.use(cors())
 app.use(express.json({ limit: '20mb' }))
 app.use('/uploads', express.static('uploads'))
+app.use('/api/chunk', createChunkUploadRouter())
 
 // ─── 内存存储 ───────────────────────────────────────────────
 interface ClientMeta {

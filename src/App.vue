@@ -14,6 +14,7 @@ const navItems = [
   { path: '/amap', label: '高德地图' },
   { path: '/scroll-spy', label: '目录联动' },
   { path: '/excel', label: 'Excel解析' },
+  { path: '/chunk-upload', label: '切片上传' },
 ]
 
 const selectedKey = computed(() => route.path)
