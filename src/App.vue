@@ -15,6 +15,7 @@ const navItems = [
   { path: '/scroll-spy', label: '目录联动' },
   { path: '/excel', label: 'Excel解析' },
   { path: '/chunk-upload', label: '切片上传' },
+  { path: '/logicflow', label: '工作流' },
 ]
 
 const selectedKey = computed(() => route.path)
