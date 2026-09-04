@@ -2,9 +2,17 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import LogicFlow from '@logicflow/core'
 import {
+  AutoLayout,
   Control,
+  CurvedEdge,
+  CurvedEdgeModel,
+  DndPanel,
+  FlowPath,
+  Highlight,
+  InsertNodeInPolyline,
   Menu,
   MiniMap,
+  ProximityConnect,
   SelectionSelect,
   Snapshot,
 } from '@logicflow/extension'
@@ -12,13 +20,7 @@ import '@logicflow/core/es/index.css'
 import '@logicflow/extension/es/index.css'
 
 type ElementKind = 'node' | 'edge' | null
-
-interface PaletteItem {
-  type: string
-  text: string
-  label: string
-  color: string
-}
+type HighlightMode = 'single' | 'path' | 'neighbour'
 
 const containerRef = ref<HTMLElement | null>(null)
 let lf: LogicFlow | null = null
@@ -33,96 +35,119 @@ const selected = reactive({
 
 const graphJson = ref('')
 const showJson = ref(false)
+const showHelp = ref(false)
+const pathList = ref<{ routeId: string; name: string; elements: string[] }[]>([])
+const edgeType = ref('curved-edge')
+const highlightMode = ref<HighlightMode>('path')
+const proximityOn = ref(true)
+const highlightOn = ref(true)
+const miniMapOn = ref(true)
 
-const palette: PaletteItem[] = [
-  { type: 'circle', text: '开始', label: '开始', color: '#52c41a' },
-  { type: 'rect', text: '审批节点', label: '审批', color: '#1677ff' },
-  { type: 'rect', text: '办理节点', label: '办理', color: '#13c2c2' },
-  { type: 'diamond', text: '条件网关', label: '网关', color: '#fa8c16' },
-  { type: 'circle', text: '结束', label: '结束', color: '#ff4d4f' },
-]
+const hasSelection = computed(() => !!selected.id)
 
 const edgeTypes = [
+  { value: 'curved-edge', label: '圆角折线' },
   { value: 'polyline', label: '折线' },
   { value: 'bezier', label: '贝塞尔' },
   { value: 'line', label: '直线' },
 ]
 
-const edgeType = ref('polyline')
-
-const hasSelection = computed(() => !!selected.id)
+const featureList = [
+  'DndPanel 官方拖拽面板',
+  'Control 缩放控制条',
+  'Menu 右键菜单',
+  'SelectionSelect 框选',
+  'MiniMap 小地图',
+  'Snapshot 导出图片',
+  'Highlight 邻接/路径高亮',
+  'ProximityConnect 靠近吸附连线',
+  'InsertNodeInPolyline 拖到线上插入节点',
+  'CurvedEdge 圆角边',
+  'FlowPath 路径分析',
+  'AutoLayout 自动布局',
+]
 
 const defaultData = {
   nodes: [
     {
       id: 'start',
       type: 'circle',
-      x: 160,
-      y: 220,
+      x: 140,
+      y: 240,
       text: '开始',
       properties: { nodeKind: 'start' },
     },
     {
       id: 'task1',
       type: 'rect',
-      x: 360,
-      y: 220,
+      x: 340,
+      y: 240,
       text: '提交申请',
       properties: { nodeKind: 'task', assignee: '发起人', role: '员工' },
     },
     {
       id: 'gateway',
       type: 'diamond',
-      x: 580,
-      y: 220,
-      text: '经理审批',
+      x: 560,
+      y: 240,
+      text: '金额判断',
       properties: { nodeKind: 'gateway', condition: '金额 > 1000' },
     },
     {
       id: 'task2',
       type: 'rect',
-      x: 800,
+      x: 780,
+      y: 120,
+      text: '经理审批',
+      properties: { nodeKind: 'task', assignee: '经理', role: '管理' },
+    },
+    {
+      id: 'task3',
+      type: 'rect',
+      x: 780,
+      y: 360,
+      text: '自动通过',
+      properties: { nodeKind: 'task', assignee: '系统', role: '-' },
+    },
+    {
+      id: 'task4',
+      type: 'rect',
+      x: 1000,
       y: 120,
       text: '财务复核',
       properties: { nodeKind: 'task', assignee: '财务', role: '财务' },
     },
     {
-      id: 'task3',
-      type: 'rect',
-      x: 800,
-      y: 320,
-      text: '直接通过',
-      properties: { nodeKind: 'task', assignee: '系统', role: '-' },
-    },
-    {
       id: 'end',
       type: 'circle',
-      x: 1020,
-      y: 220,
+      x: 1220,
+      y: 240,
       text: '结束',
       properties: { nodeKind: 'end' },
     },
   ],
   edges: [
-    { id: 'e1', type: 'polyline', sourceNodeId: 'start', targetNodeId: 'task1' },
-    { id: 'e2', type: 'polyline', sourceNodeId: 'task1', targetNodeId: 'gateway' },
-    {
-      id: 'e3',
-      type: 'polyline',
-      sourceNodeId: 'gateway',
-      targetNodeId: 'task2',
-      text: '是',
-    },
-    {
-      id: 'e4',
-      type: 'polyline',
-      sourceNodeId: 'gateway',
-      targetNodeId: 'task3',
-      text: '否',
-    },
-    { id: 'e5', type: 'polyline', sourceNodeId: 'task2', targetNodeId: 'end' },
-    { id: 'e6', type: 'polyline', sourceNodeId: 'task3', targetNodeId: 'end' },
+    { id: 'e1', type: 'curved-edge', sourceNodeId: 'start', targetNodeId: 'task1' },
+    { id: 'e2', type: 'curved-edge', sourceNodeId: 'task1', targetNodeId: 'gateway' },
+    { id: 'e3', type: 'curved-edge', sourceNodeId: 'gateway', targetNodeId: 'task2', text: '>1000' },
+    { id: 'e4', type: 'curved-edge', sourceNodeId: 'gateway', targetNodeId: 'task3', text: '≤1000' },
+    { id: 'e5', type: 'curved-edge', sourceNodeId: 'task2', targetNodeId: 'task4' },
+    { id: 'e6', type: 'curved-edge', sourceNodeId: 'task4', targetNodeId: 'end' },
+    { id: 'e7', type: 'curved-edge', sourceNodeId: 'task3', targetNodeId: 'end' },
   ],
+}
+
+const dndIcons = {
+  select:
+    'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABQAAAAUCAYAAAH6ji2bAAAABGdBTUEAALGPC/xhBQAAAOVJREFUOBGtVMENwzAIjKP++2026ETdpv10iy7WFbqFyyW6GBywLCv5gI+Dw2Bluj1znuSjhb99Gkn6QILDY2imo60p8nsnc9bEo3+QJ+AKHfMdZHnl78wyTnyHZD53Zzx73MRSgYvnqgCUHj6gwdck7Zsp1VOrz0Uz8NbKunzAW+Gu4fYW28bUYutYlzSa7B84Fh7d1kjLwhcSdYAYrdkMQVpsBr5XgDGuXwQfQr0y9zwLda+DUYXLaGKdd2ZTtvbolaO87pdo24hP7ov16N0zArH1ur3iwJpXxm+v7oAJNR4JEP8DoAuSFEkYH7cAAAAASUVORK5CYII=',
+  start:
+    'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABQAAAAUCAYAAAH6ji2bAAAABGdBTUEAALGPC/xhBQAAAnBJREFUOBGdVL1rU1EcPfdGBddmaZLiEhdx1MHZQXApraCzQ7GKLgoRBxMfcRELuihWKcXFRcEWF8HBf0DdDCKYRZpnl7p0svLe9Zzbd29eQhTbC8nv+9zf130AT63jvooOGS8Vf9Nt5zxba7sXQwODfkWpkbjTQfCGUd9gIp3uuPP8bZ946g56dYQvnBg+b1HB8VIQmMFrazKcKSvFW2dQTxJnJdQ77urmXWOMBCmXM2Rke4S7UAW+/8ywwFoewmBps2tu7mbTdp8VMOkIRAkKfrVawalJTtIliclFbaOBqa0M2xImHeVIfd/nKAfVq/LGnPss5Kh00VEdSzfwnBXPUpmykNss4lUI9C1ga+8PNrBD5YeqRY2Zz8PhjooIbfJXjowvQJBqkmEkVnktWhwu2SM7SMx7Cj0N9IC0oQXRo8xwAGzQms+xrB/nNSUWVveI48ayrFGyC2+E2C+aWrZHXvOuz+CiV6iycWe1Rd1Q6+QUG07nb5SbPrL4426d+9E1axKjY3AoRrlEeSQo2Eu0T6BWAAr6COhTcWjRaYfKG5csnvytvUr/WY4rrPMB53Uo7jZRjXaG6/CFfNMaXEu75nG47X+oepU7PKJvvzGDY1YLSKHJrK7FUwXKkaxwhCW3u+sDrIju54RY5ErkJggg==',
+  task:
+    'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABQAAAAUCAYAAAH6ji2bAAAABGdBTUEAALGPC/xhBQAAAqlJREFUOBF9VM9rE0EUfrQ+tN66VWyitRVbRfBq9iUFKigIrQW3emKmn9A5oNm+D0SgVC89+ANY/QX+Frz15N7iRQm80j2kEja5UUizURsr+xm+N7vzq6EiEx8yy5eZ9/neTF7cZiZSPyJgghcUoL5LvTbs5bCf6xXx2LRJyGW+QLOZm1d9ogzS7rV0LtjZO9gOw9+ZJ+tNrMTUzSAwW1flFqFTrxjyzjmcwRIQJgHepdoo0zfkiqaPg6oIS7QDxGXwn9zXlwHZByNxP9bN5rX1mH52lAvH5Jh+IdgBjZkjlNOw6PnH4PME+PD4jaQ+aDxxjATNUgUiQcjOiRCFYCanuve6hRIzSpaiR1MfR+DWJCoJ2YFOkQYAsJn5AG2jJYtgAqnLBqfFIBsQ0VxpSk3CcH3E8CITmdGZUyNxjmq39MhPdYdOZ2O0E3DQJCQSuNuqATLyLf4khEuoYJyGxCLvIf8EYyhTb4Ts1dQ1CE213ik55hB6YUJLaf1tcpDvqGCX8wVQ7FjcpVIB359WtGs0mT9kt54QhkJ3THI7O8YuENf/23ScQagbPaBV1zfBT0nmvuUenycqO4q+e+rCX9SbO2dQ+9jDVx0FFyYBS+Is3W/J+A/U9E/GG3Jhl1/9413j8AAAAASUVORK5CYII=',
+  gateway:
+    'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABQAAAAUCAYAAAH6ji2bAAAABGdBTUEAALGPC/xhBQAAA1BJREFUOBFtVE1IVFEYfe/+8TUaUUg+xQttQq1QS1dBEF7UQq0W1aJVtHIV7YIWbXLhQq2CNma1C6FtFBREJBAdQgkpBYkwmY/+8/7uzN17p/fGQJh5z/nO+e53z/mOmXN3TQQEQ0A7S8ebVpYUF82zXvfbnXd3GNsXEpOyiZ+hYZTDmeeEFuvU6zD9ZzfU/BeS7U1u8sxfU2NqlkD8F6DOq+8O1peVF1Ed98cV8qXVTMTFAiVCBhwfEzKvlGAB3Q62jiAd+C7Cf0ByKaD7i1K2geQd8LZYbgD5GbuGp7R1Fde+tOwU8/Nm0T4g2MfLNbhgocY6O5w8jHfK+cZtNZykFGnY6MLppJdXcxLEoM5N6BQTOdKy78aV+h23DahKnk4dYIJUhESgai0w6jbd3N/cT5fg8khndAVltbYHCbC+pB5RS8xZNefswcI+p3ZJNi5z0deT1/IsQThtQ+sFwrLQDTugnR7XXjtjRQS7/GLhUi+W2qshx+DixkTYdiL/i9gCE9+EZrshpQARFGXkNf2hQe9lXsBTNg4JSV88bPZWAM/D1fY9B5QKoarA5fDBbYfWO4rqXNpsAdeOvW7+A4hH9Cd+V8hhYUhOJkZYEsC2gPVOSE4afxSOFSBOf+nmhR4Ay/5wHx1+dXzTdAFZ0jEkjD97pwWDXk6pw+CC8wE8rsN1LEQLHTr/vb7CDe0bBkQY+M3RkyfgDCfi+jN/LP07TBwHOe3bR/qw7o37yA5N3bYy8AN+53B4Q9TB9EMRZP8bzYs2cSsQIbRWzdwa/ur+6FP3Ip5qNmzsjC1u9hNmQOcT6rqO0OqAo2dtiAocSwwCeqsj48U9V/F9FKbYXqm8Sz8a5SjYEEfR8gW/9l2Hp5pFd7W7i2qigQqigCHidu+P0Q/lHdjT5U6Q+2rwI6X2aJ4bd9AM2DAqRnP5BCDRLG4ewm5+BbXB/XQ9cQgBV8o0/bQLwMw8+8bQK+8W/smYD5K/WqJI5cQNwAAAABJRU5ErkJggg==',
+  end:
+    'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABQAAAAUCAYAAAH6ji2bAAAABGdBTUEAALGPC/xhBQAAAnBJREFUOBGdVL1rU1EcPfdGBddmaZLiEhdx1MHZQXApraCzQ7GKLgoRBxMfcRELuihWKcXFRcEWF8HBf0DdDCKYRZpnl7p0svLe9Zzbd29eQhTbC8nv+9zf130AT63jvooOGS8Vf9Nt5zxba7sXQwODfkWpkbjTQfCGUd9gIp3uuPP8bZ946g56dYQvnBg+b1HB8VIQmMFrazKcKSvFW2dQTxJnJdQ77urmXWOMBCmXM2Rke4S7UAW+/8ywwFoewmBps2tu7mbTdp8VMOkIRAkKfrVawalJTtIliclFbaOBqa0M2xImHeVIfd/nKAfVq/LGnPss5Kh00VEdSzfwnBXPUpmykNss4lUI9C1ga+8PNrBD5YeqRY2Zz8PhjooIbfJXjowvQJBqkmEkVnktWhwu2SM7SMx7Cj0N9IC0oQXRo8xwAGzQms+xrB/nNSUWVveI48ayrFGyC2+E2C+aWrZHXvOuz+CiV6iycWe1Rd1Q6+QUG07nb5SbPrL4426d+9E1axKjY3AoRrlEeSQo2Eu0T6BWAAr6COhTcWjRaYfKG5csnvytvUr/WY4rrPMB53Uo7jZRjXaG6/CFfNMaXEu75nG47X+oepU7PKJvvzGDY1YLSKHJrK7FUwXKkaxwhCW3u+sDrIju54RY5ErkJggg==',
 }
 
 function clearSelection() {
@@ -147,27 +172,6 @@ function fillEdgeSelection(data: any) {
   selected.type = data.type
   selected.text = typeof data.text === 'object' ? data.text?.value || '' : data.text || ''
   selected.properties = { ...(data.properties || {}) }
-}
-
-function startDrag(item: PaletteItem) {
-  if (!lf) return
-  lf.dnd.startDrag({
-    type: item.type,
-    text: item.text,
-    properties: {
-      nodeKind:
-        item.label === '开始'
-          ? 'start'
-          : item.label === '结束'
-            ? 'end'
-            : item.label === '网关'
-              ? 'gateway'
-              : 'task',
-      assignee: '',
-      role: '',
-      condition: '',
-    },
-  })
 }
 
 function applyText() {
@@ -214,15 +218,13 @@ function redo() {
 
 function exportJson() {
   if (!lf) return
-  const data = lf.getGraphData()
-  graphJson.value = JSON.stringify(data, null, 2)
+  graphJson.value = JSON.stringify(lf.getGraphData(), null, 2)
   showJson.value = true
 }
 
 function downloadJson() {
   if (!lf) return
-  const data = lf.getGraphData()
-  const blob = new Blob([JSON.stringify(data, null, 2)], {
+  const blob = new Blob([JSON.stringify(lf.getGraphData(), null, 2)], {
     type: 'application/json',
   })
   const a = document.createElement('a')
@@ -233,12 +235,9 @@ function downloadJson() {
 }
 
 async function snapshotPng() {
-  if (!lf) return
-  // Snapshot 插件
   const anyLf = lf as any
-  if (anyLf.getSnapshot) {
-    await anyLf.getSnapshot()
-  } else if (anyLf.extension?.snapshot?.getSnapshot) {
+  if (anyLf?.getSnapshot) await anyLf.getSnapshot()
+  else if (anyLf?.extension?.snapshot?.getSnapshot) {
     await anyLf.extension.snapshot.getSnapshot()
   }
 }
@@ -247,7 +246,135 @@ function resetDemo() {
   if (!lf) return
   lf.render(defaultData as any)
   clearSelection()
+  pathList.value = []
   nextTick(() => lf?.fitView(40))
+}
+
+function openSelection() {
+  const ext = (lf as any)?.extension?.selectionSelect
+  ext?.openSelectionSelect?.()
+  lf?.once('selection:selected', () => ext?.closeSelectionSelect?.())
+}
+
+function toggleMiniMap() {
+  miniMapOn.value = !miniMapOn.value
+  const mm = (lf as any)?.extension?.miniMap
+  if (!mm) return
+  if (miniMapOn.value) mm.show?.(true)
+  else mm.hide?.()
+}
+
+function setHighlightMode(mode: HighlightMode) {
+  highlightMode.value = mode
+  const hl = (lf as any)?.extension?.highlight
+  hl?.setMode?.(mode)
+}
+
+function toggleHighlight() {
+  highlightOn.value = !highlightOn.value
+  const hl = (lf as any)?.extension?.highlight
+  hl?.setEnable?.(highlightOn.value)
+  if (!highlightOn.value) hl?.restoreHighlight?.()
+}
+
+function toggleProximity() {
+  proximityOn.value = !proximityOn.value
+  const pc = (lf as any)?.extension?.proximityConnect
+  if (pc) pc.enable = proximityOn.value
+}
+
+function analyzePaths() {
+  if (!lf) return
+  const fp = (lf as any).extension?.flowPath
+  if (!fp) return
+  fp.startNodeType = 'circle'
+  // FlowPath 通过 startNodeType 找开始节点；示例开始是 circle
+  try {
+    const paths = fp.getPathes?.() || []
+    pathList.value = paths.map((p: any) => ({
+      routeId: p.routeId,
+      name: p.name || p.routeId,
+      elements: p.elements || [],
+    }))
+  } catch (e) {
+    pathList.value = []
+    console.warn(e)
+  }
+}
+
+function autoLayout() {
+  if (!lf) return
+  const al = (lf as any).extension?.autoLayout
+  const fp = (lf as any).extension?.flowPath
+  if (!al || !fp) return
+  try {
+    fp.startNodeType = 'circle'
+    const paths = fp.getPathes?.() || []
+    const data = lf.getGraphRawData()
+    al.layout?.(data, paths)
+    lf.render(data)
+    nextTick(() => lf?.fitView(40))
+  } catch (e) {
+    console.warn('自动布局失败（插件标注未完善）', e)
+  }
+}
+
+function highlightSelectedPath() {
+  if (!lf || !selected.id) return
+  const hl = (lf as any).extension?.highlight
+  hl?.setEnable?.(true)
+  hl?.setMode?.('path')
+  hl?.highlight?.(selected.id, 'path')
+  highlightOn.value = true
+  highlightMode.value = 'path'
+}
+
+function setupDndPanel() {
+  const dnd = (lf as any)?.extension?.dndPanel
+  if (!dnd?.setPatternItems) return
+
+  dnd.setPatternItems([
+    {
+      label: '框选',
+      icon: dndIcons.select,
+      callback: () => openSelection(),
+    },
+    {
+      type: 'circle',
+      text: '开始',
+      label: '开始',
+      icon: dndIcons.start,
+      properties: { nodeKind: 'start' },
+    },
+    {
+      type: 'rect',
+      text: '审批节点',
+      label: '审批',
+      icon: dndIcons.task,
+      properties: { nodeKind: 'task', assignee: '', role: '' },
+    },
+    {
+      type: 'rect',
+      text: '办理节点',
+      label: '办理',
+      icon: dndIcons.task,
+      properties: { nodeKind: 'task', assignee: '', role: '' },
+    },
+    {
+      type: 'diamond',
+      text: '条件网关',
+      label: '网关',
+      icon: dndIcons.gateway,
+      properties: { nodeKind: 'gateway', condition: '' },
+    },
+    {
+      type: 'circle',
+      text: '结束',
+      label: '结束',
+      icon: dndIcons.end,
+      properties: { nodeKind: 'end' },
+    },
+  ])
 }
 
 function initLogicFlow() {
@@ -264,67 +391,94 @@ function initLogicFlow() {
     background: { backgroundColor: '#fafbfc' },
     keyboard: { enabled: true },
     edgeType: edgeType.value,
+    // 交互增强
+    isSilentMode: false,
+    stopScrollGraph: false,
+    stopZoomGraph: false,
+    adjustEdge: true,
+    adjustEdgeStartAndEnd: true,
+    edgeTextEdit: true,
+    edgeTextDraggable: true,
+    nodeTextEdit: true,
+    nodeTextDraggable: true,
+    hoverOutline: true,
+    nodeSelectedOutline: true,
+    edgeSelectedOutline: true,
+    multipleSelectKey: 'shift',
     style: {
-      rect: {
-        rx: 6,
-        ry: 6,
-        strokeWidth: 2,
-        stroke: '#1677ff',
-        fill: '#e6f4ff',
-      },
-      circle: {
-        strokeWidth: 2,
-        stroke: '#52c41a',
-        fill: '#f6ffed',
-        r: 28,
-      },
-      diamond: {
-        strokeWidth: 2,
-        stroke: '#fa8c16',
-        fill: '#fff7e6',
-      },
-      polyline: {
-        strokeWidth: 2,
-        stroke: '#8c8c8c',
-      },
-      nodeText: {
-        fontSize: 13,
-        color: '#262626',
-      },
+      rect: { rx: 6, ry: 6, strokeWidth: 2, stroke: '#1677ff', fill: '#e6f4ff' },
+      circle: { strokeWidth: 2, stroke: '#52c41a', fill: '#f6ffed', r: 28 },
+      diamond: { strokeWidth: 2, stroke: '#fa8c16', fill: '#fff7e6' },
+      polyline: { strokeWidth: 2, stroke: '#8c8c8c' },
+      nodeText: { fontSize: 13, color: '#262626' },
       edgeText: {
         fontSize: 12,
         color: '#595959',
         background: { fill: '#fff' },
       },
     },
-    plugins: [Control, Menu, Snapshot, SelectionSelect, MiniMap],
+    plugins: [
+      Control,
+      Menu,
+      Snapshot,
+      SelectionSelect,
+      MiniMap,
+      DndPanel,
+      Highlight,
+      ProximityConnect,
+      InsertNodeInPolyline,
+      FlowPath,
+      AutoLayout,
+    ],
     pluginsOptions: {
       miniMap: {
         isShowHeader: false,
         isShowCloseIcon: true,
-        width: 160,
-        height: 110,
+        width: 168,
+        height: 120,
+      },
+      highlight: {
+        mode: 'path',
+      },
+      proximityConnect: {
+        enable: true,
+        distance: 100,
+        type: 'default',
       },
     },
   })
 
+  // 圆角折线物料
+  lf.register({
+    type: 'curved-edge',
+    view: CurvedEdge,
+    model: CurvedEdgeModel,
+  })
   lf.setDefaultEdgeType(edgeType.value)
 
-  // 右键菜单增强
+  setupDndPanel()
+
   const menu = (lf.extension as any).menu
   menu?.setMenuConfig?.({
     nodeMenu: [
       {
-        text: '删除节点',
+        text: '高亮路径',
         callback(node: any) {
-          lf?.deleteNode(node.id)
-          clearSelection()
+          fillNodeSelection(node)
+          highlightSelectedPath()
         },
       },
       {
         text: '复制节点',
         callback(node: any) {
           lf?.cloneNode(node.id)
+        },
+      },
+      {
+        text: '删除节点',
+        callback(node: any) {
+          lf?.deleteNode(node.id)
+          clearSelection()
         },
       },
     ],
@@ -339,17 +493,37 @@ function initLogicFlow() {
     ],
     graphMenu: [
       {
+        text: '框选',
+        callback() {
+          openSelection()
+        },
+      },
+      {
         text: '适应画布',
         callback() {
           lf?.fitView(40)
         },
       },
+      {
+        text: '分析路径',
+        callback() {
+          analyzePaths()
+        },
+      },
     ],
   })
 
-  lf.on('node:click', ({ data }) => fillNodeSelection(data))
+  lf.on('node:click', ({ data }) => {
+    fillNodeSelection(data)
+    if (highlightOn.value) {
+      ;(lf as any).extension?.highlight?.highlight?.(data.id, highlightMode.value)
+    }
+  })
   lf.on('edge:click', ({ data }) => fillEdgeSelection(data))
-  lf.on('blank:click', () => clearSelection())
+  lf.on('blank:click', () => {
+    clearSelection()
+    ;(lf as any).extension?.highlight?.restoreHighlight?.()
+  })
   lf.on('node:dnd-add', ({ data }) => fillNodeSelection(data))
 
   lf.render(defaultData as any)
@@ -358,7 +532,7 @@ function initLogicFlow() {
     try {
       ;(lf as any).extension?.miniMap?.show?.(true)
     } catch {
-      // miniMap 可选
+      // ignore
     }
   })
 }
@@ -379,8 +553,8 @@ onBeforeUnmount(() => {
   <div class="lf-page">
     <div class="toolbar">
       <div class="title">
-        <strong>LogicFlow 工作流</strong>
-        <span>拖拽节点 · 连线 · 属性编辑 · 导出 JSON</span>
+        <strong>LogicFlow 工作流（扩展增强）</strong>
+        <span>官方插件：拖拽面板 / 高亮 / 吸附连线 / 线上插点 / 圆角边 / 路径 / 布局 / 小地图…</span>
       </div>
       <div class="actions">
         <button type="button" @click="undo">撤销</button>
@@ -389,31 +563,20 @@ onBeforeUnmount(() => {
         <button type="button" @click="zoomOut">缩小</button>
         <button type="button" @click="fitView">适应</button>
         <button type="button" @click="resetZoom">居中</button>
+        <button type="button" @click="openSelection">框选</button>
+        <button type="button" @click="analyzePaths">分析路径</button>
+        <button type="button" @click="autoLayout">自动布局</button>
         <button type="button" @click="exportJson">查看 JSON</button>
         <button type="button" @click="downloadJson">下载 JSON</button>
         <button type="button" @click="snapshotPng">导出图片</button>
+        <button type="button" @click="showHelp = true">已启用插件</button>
         <button type="button" class="primary" @click="resetDemo">重置示例</button>
       </div>
     </div>
 
     <div class="main">
-      <aside class="palette">
-        <div class="caption">节点面板</div>
-        <div
-          v-for="item in palette"
-          :key="item.label + item.text"
-          class="palette-item"
-          :style="{ borderColor: item.color }"
-          @mousedown="startDrag(item)"
-        >
-          <i :style="{ background: item.color }" />
-          <div>
-            <div class="name">{{ item.label }}</div>
-            <div class="desc">{{ item.text }}</div>
-          </div>
-        </div>
-
-        <div class="caption" style="margin-top: 16px">连线类型</div>
+      <aside class="side">
+        <div class="caption">连线类型</div>
         <div class="edge-types">
           <button
             v-for="et in edgeTypes"
@@ -426,9 +589,59 @@ onBeforeUnmount(() => {
           </button>
         </div>
 
-        <p class="tip">
-          从左侧按住拖到画布；点击节点两侧锚点拖出连线。Delete 可删除选中元素。
-        </p>
+        <div class="caption">高亮模式</div>
+        <div class="edge-types">
+          <button
+            type="button"
+            :class="{ active: highlightMode === 'single' }"
+            @click="setHighlightMode('single')"
+          >
+            单节点
+          </button>
+          <button
+            type="button"
+            :class="{ active: highlightMode === 'neighbour' }"
+            @click="setHighlightMode('neighbour')"
+          >
+            邻接
+          </button>
+          <button
+            type="button"
+            :class="{ active: highlightMode === 'path' }"
+            @click="setHighlightMode('path')"
+          >
+            路径
+          </button>
+        </div>
+
+        <div class="caption">开关</div>
+        <label class="switch">
+          <input type="checkbox" :checked="highlightOn" @change="toggleHighlight" />
+          Highlight 高亮
+        </label>
+        <label class="switch">
+          <input type="checkbox" :checked="proximityOn" @change="toggleProximity" />
+          靠近吸附连线
+        </label>
+        <label class="switch">
+          <input type="checkbox" :checked="miniMapOn" @change="toggleMiniMap" />
+          MiniMap
+        </label>
+
+        <div class="caption">操作提示</div>
+        <ul class="tips">
+          <li>左侧官方 <b>DndPanel</b> 拖节点</li>
+          <li>节点拖到<strong>折线中间</strong>可插入</li>
+          <li>拖近其他节点会<strong>吸附预览连线</strong></li>
+          <li>Shift + 框选多选</li>
+          <li>双击文本可编辑</li>
+        </ul>
+
+        <div v-if="pathList.length" class="caption">路径结果</div>
+        <div v-for="p in pathList" :key="p.routeId" class="path-item">
+          <div class="path-name">{{ p.name || p.routeId }}</div>
+          <div class="path-els">{{ p.elements.join(' → ') }}</div>
+        </div>
       </aside>
 
       <div ref="containerRef" class="canvas" />
@@ -475,6 +688,10 @@ onBeforeUnmount(() => {
               placeholder="如：amount > 1000"
               @change="applyProperties"
             />
+
+            <button type="button" class="ghost" @click="highlightSelectedPath">
+              高亮经过此节点的路径
+            </button>
           </template>
 
           <button type="button" class="danger" @click="deleteSelected">删除选中</button>
@@ -489,6 +706,21 @@ onBeforeUnmount(() => {
           <button type="button" @click="showJson = false">关闭</button>
         </div>
         <pre>{{ graphJson }}</pre>
+      </div>
+    </div>
+
+    <div v-if="showHelp" class="json-mask" @click.self="showHelp = false">
+      <div class="json-panel help">
+        <div class="json-head">
+          <strong>本页已接入的 LogicFlow 扩展</strong>
+          <button type="button" @click="showHelp = false">关闭</button>
+        </div>
+        <ul>
+          <li v-for="f in featureList" :key="f">{{ f }}</li>
+        </ul>
+        <p class="note">
+          未默认接入：BPMN 全套元素、泳道 Pool、DynamicGroup（更重，可按业务再开）。
+        </p>
       </div>
     </div>
   </div>
@@ -556,61 +788,32 @@ onBeforeUnmount(() => {
   flex: 1;
   min-height: 0;
   display: grid;
-  grid-template-columns: 180px 1fr 240px;
+  grid-template-columns: 190px 1fr 240px;
 }
 
-.palette,
+.side,
 .props {
-  border-right: 1px solid #f0f0f0;
   background: #fafafa;
   padding: 12px;
   overflow: auto;
 }
 
+.side {
+  border-right: 1px solid #f0f0f0;
+}
+
 .props {
-  border-right: none;
   border-left: 1px solid #f0f0f0;
 }
 
 .caption {
   font-size: 12px;
   color: #999;
-  margin-bottom: 10px;
+  margin: 12px 0 8px;
 }
 
-.palette-item {
-  display: flex;
-  gap: 10px;
-  align-items: center;
-  padding: 10px;
-  margin-bottom: 8px;
-  background: #fff;
-  border: 1px solid #eee;
-  border-left-width: 3px;
-  border-radius: 8px;
-  cursor: grab;
-  user-select: none;
-}
-
-.palette-item:active {
-  cursor: grabbing;
-}
-
-.palette-item i {
-  width: 12px;
-  height: 12px;
-  border-radius: 50%;
-  flex-shrink: 0;
-}
-
-.palette-item .name {
-  font-size: 13px;
-  font-weight: 600;
-}
-
-.palette-item .desc {
-  font-size: 11px;
-  color: #999;
+.caption:first-child {
+  margin-top: 0;
 }
 
 .edge-types {
@@ -625,11 +828,40 @@ onBeforeUnmount(() => {
   background: #e6f4ff;
 }
 
-.tip {
-  margin-top: 14px;
+.switch {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   font-size: 12px;
-  color: #8c8c8c;
-  line-height: 1.6;
+  color: #555;
+  margin-bottom: 6px;
+}
+
+.tips {
+  margin: 0;
+  padding-left: 16px;
+  font-size: 12px;
+  color: #666;
+  line-height: 1.7;
+}
+
+.path-item {
+  background: #fff;
+  border: 1px solid #eee;
+  border-radius: 6px;
+  padding: 8px;
+  margin-bottom: 6px;
+  font-size: 12px;
+}
+
+.path-name {
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+
+.path-els {
+  color: #888;
+  word-break: break-all;
 }
 
 .canvas {
@@ -662,6 +894,13 @@ onBeforeUnmount(() => {
   color: #ff4d4f;
 }
 
+.props .ghost {
+  margin-top: 10px;
+  width: 100%;
+  color: #1677ff;
+  border-color: #91caff;
+}
+
 .empty {
   color: #bbb;
   font-size: 13px;
@@ -689,6 +928,10 @@ onBeforeUnmount(() => {
   flex-direction: column;
 }
 
+.json-panel.help {
+  width: min(520px, 100%);
+}
+
 .json-head {
   display: flex;
   justify-content: space-between;
@@ -697,19 +940,32 @@ onBeforeUnmount(() => {
   border-bottom: 1px solid #f0f0f0;
 }
 
-.json-panel pre {
+.json-panel pre,
+.json-panel ul {
   margin: 0;
   padding: 16px;
   overflow: auto;
-  font-size: 12px;
+  font-size: 13px;
   background: #f6f8fa;
+}
+
+.json-panel ul {
+  line-height: 1.8;
+}
+
+.note {
+  margin: 0;
+  padding: 12px 16px 16px;
+  font-size: 12px;
+  color: #888;
 }
 
 @media (max-width: 960px) {
   .main {
-    grid-template-columns: 140px 1fr;
+    grid-template-columns: 1fr;
   }
 
+  .side,
   .props {
     display: none;
   }
