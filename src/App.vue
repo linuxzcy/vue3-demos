@@ -17,6 +17,7 @@ const navItems = [
   { path: '/excel', label: 'Excel解析' },
   { path: '/chunk-upload', label: '切片上传' },
   { path: '/logicflow', label: '工作流' },
+  { path: '/print-dual-table', label: '双表打印' },
 ]
 
 const selectedKey = computed(() => route.path)

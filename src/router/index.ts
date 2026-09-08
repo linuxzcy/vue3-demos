@@ -19,6 +19,11 @@ const router = createRouter({
     { path: '/excel', name: 'Excel', component: () => import('../views/ExcelParsePage.vue') },
     { path: '/chunk-upload', name: 'ChunkUpload', component: () => import('../views/ChunkUploadPage.vue') },
     { path: '/logicflow', name: 'LogicFlow', component: () => import('../views/LogicFlowPage.vue') },
+    {
+      path: '/print-dual-table',
+      name: 'PrintDualTable',
+      component: () => import('../views/PrintDualTablePage.vue'),
+    },
   ],
 })
 
