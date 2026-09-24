@@ -1,49 +1,139 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
+
 <head>
   <meta charset="UTF-8" />
   <title>滑词添加评论（文本批注）Demo</title>
   <style>
-    body { font-family: system-ui, sans-serif; max-width: 860px; margin: 32px auto; padding: 0 16px; color: #24292f; }
-    #article { line-height: 1.9; font-size: 15px; border: 1px solid #d0d7de; border-radius: 8px; padding: 20px 24px; }
-    #article h3 { margin-top: 0; }
+    body {
+      font-family: system-ui, sans-serif;
+      max-width: 860px;
+      margin: 32px auto;
+      padding: 0 16px;
+      color: #24292f;
+    }
+
+    #article {
+      line-height: 1.9;
+      font-size: 15px;
+      border: 1px solid #d0d7de;
+      border-radius: 8px;
+      padding: 20px 24px;
+    }
+
+    #article h3 {
+      margin-top: 0;
+    }
 
     /* 批注高亮：上下两条彩色横线（仿 Word/Noted 波浪线），用 box-shadow 实现，
        重叠批注天然叠加，避免嵌套 <mark> 被浏览器 DOM 修正拆坏 */
-    .anno { cursor: pointer; }
+    .anno {
+      cursor: pointer;
+    }
 
     #toolbar {
-      position: fixed; display: none; z-index: 10;
-      background: #24292f; color: #fff; border-radius: 6px; padding: 4px;
-      box-shadow: 0 4px 12px rgba(0,0,0,.25); white-space: nowrap;
+      position: fixed;
+      display: none;
+      z-index: 10;
+      background: #24292f;
+      color: #fff;
+      border-radius: 6px;
+      padding: 4px;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, .25);
+      white-space: nowrap;
     }
-    #toolbar button { background: none; border: none; color: #fff; padding: 6px 12px; cursor: pointer; font-size: 13px; }
-    #toolbar button:hover { background: #444c56; border-radius: 4px; }
+
+    #toolbar button {
+      background: none;
+      border: none;
+      color: #fff;
+      padding: 6px 12px;
+      cursor: pointer;
+      font-size: 13px;
+    }
+
+    #toolbar button:hover {
+      background: #444c56;
+      border-radius: 4px;
+    }
 
     #popover {
-      position: fixed; display: none; z-index: 11; width: 300px;
-      background: #fff; border: 1px solid #d0d7de; border-radius: 8px;
-      box-shadow: 0 8px 24px rgba(0,0,0,.15); padding: 12px;
+      position: fixed;
+      display: none;
+      z-index: 11;
+      width: 300px;
+      background: #fff;
+      border: 1px solid #d0d7de;
+      border-radius: 8px;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, .15);
+      padding: 12px;
     }
-    #popover textarea { width: 100%; box-sizing: border-box; min-height: 60px; resize: vertical; font: inherit; }
-    #popover .quote { font-size: 12px; color: #57606a; margin-bottom: 8px; max-height: 40px; overflow: hidden; }
-    #popover .comments { max-height: 150px; overflow-y: auto; margin-bottom: 8px; font-size: 13px; }
-    #popover .comments div { padding: 6px 0; border-bottom: 1px dashed #eaeef2; }
-    #popover .actions { text-align: right; margin-top: 8px; }
-    #popover .actions button { padding: 5px 12px; margin-left: 6px; cursor: pointer; }
 
-    pre#store { background: #f6f8fa; padding: 12px; border-radius: 8px; font-size: 12px; max-height: 220px; overflow: auto; }
-    .hint { color: #57606a; font-size: 13px; }
+    #popover textarea {
+      width: 100%;
+      box-sizing: border-box;
+      min-height: 60px;
+      resize: vertical;
+      font: inherit;
+    }
+
+    #popover .quote {
+      font-size: 12px;
+      color: #57606a;
+      margin-bottom: 8px;
+      max-height: 40px;
+      overflow: hidden;
+    }
+
+    #popover .comments {
+      max-height: 150px;
+      overflow-y: auto;
+      margin-bottom: 8px;
+      font-size: 13px;
+    }
+
+    #popover .comments div {
+      padding: 6px 0;
+      border-bottom: 1px dashed #eaeef2;
+    }
+
+    #popover .actions {
+      text-align: right;
+      margin-top: 8px;
+    }
+
+    #popover .actions button {
+      padding: 5px 12px;
+      margin-left: 6px;
+      cursor: pointer;
+    }
+
+    pre#store {
+      background: #f6f8fa;
+      padding: 12px;
+      border-radius: 8px;
+      font-size: 12px;
+      max-height: 220px;
+      overflow: auto;
+    }
+
+    .hint {
+      color: #57606a;
+      font-size: 13px;
+    }
   </style>
 </head>
+
 <body>
   <h2>滑词添加评论 Demo</h2>
   <p class="hint">选中文章文字 → 点“💬 写评论”。批注持久化到 localStorage，刷新后仍在；已处理跨段落、重叠批注、正文小幅编辑后的锚点校正。双击高亮可删除批注。</p>
 
   <div id="article">
     <h3>浏览器渲染管线简述</h3>
-    <p>当你在地址栏输入 URL 并回车，浏览器会先进行 DNS 解析，找到对应服务器的 IP 地址，然后通过 TCP 三次握手建立连接，如果是 HTTPS 还会多出 TLS 握手的过程。连接建立后，浏览器发送 HTTP 请求，服务器返回响应报文。</p>
-    <p>拿到 HTML 之后，渲染引擎开始工作：首先解析 HTML 构建 DOM 树，同时解析 CSS 构建 CSSOM，二者合并生成渲染树。随后进入布局阶段，计算每个节点的几何信息，再进行绘制，把像素一层层画到屏幕上。现代浏览器为了性能引入了合成，通过 GPU 将图层合并，减少重排重绘的开销。</p>
+    <p>当你在地址栏输入 URL 并回车，浏览器会先进行 DNS 解析，找到对应服务器的 IP 地址，然后通过 TCP 三次握手建立连接，如果是 HTTPS 还会多出 TLS 握手的过程。连接建立后，浏览器发送 HTTP
+      请求，服务器返回响应报文。</p>
+    <p>拿到 HTML 之后，渲染引擎开始工作：首先解析 HTML 构建 DOM 树，同时解析 CSS 构建
+      CSSOM，二者合并生成渲染树。随后进入布局阶段，计算每个节点的几何信息，再进行绘制，把像素一层层画到屏幕上。现代浏览器为了性能引入了合成，通过 GPU 将图层合并，减少重排重绘的开销。</p>
     <p>需要注意的是，JavaScript 的执行会阻塞解析器，所以脚本通常放在底部或者加 defer 属性。而 async 脚本下载和执行都不阻塞解析，但执行顺序不确定，适合独立模块。</p>
   </div>
 
@@ -308,4 +398,5 @@
     render()
   </script>
 </body>
+
 </html>
