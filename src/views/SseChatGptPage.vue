@@ -14,85 +14,88 @@
  *    mermaid 闭合后才渲染 SVG,并提供「预览/代码」tab(对齐 ChatGPT)
  * 5. pin-to-bottom:用户上翻即停自动滚动,回底自动恢复
  */
-import { nextTick, reactive, ref } from 'vue'
-import { fetchSSE } from '../utils/sseFetch'
-import { renderMarkdown } from '../utils/markdown'
-import 'katex/dist/katex.min.css'
-import 'highlight.js/styles/github.css'
+import { nextTick, reactive, ref } from "vue";
+import { fetchSSE } from "../utils/sseFetch";
+import { renderMarkdown } from "../utils/markdown";
+import "katex/dist/katex.min.css";
+import "highlight.js/styles/github.css";
 
-type SegType = 'text' | 'code' | 'mermaid' | 'math' | 'table'
+type SegType = "text" | "code" | "mermaid" | "math" | "table";
 
 /** 一个渲染单元(对应 ChatGPT 的 segment 组件) */
 interface Segment {
-  id: number
-  type: SegType
-  source: string
-  html: string
+  id: number;
+  type: SegType;
+  source: string;
+  html: string;
   /** mermaid 专属:预览/代码 tab 状态 */
-  view: 'code' | 'preview'
+  view: "code" | "preview";
 }
 
 interface GptMsg {
-  id: string
-  role: 'user' | 'assistant'
-  content: string // 仅 user 消息使用
-  segments: Segment[] // 已闭合冻结的段(渲染一次后不再变动)
-  live: { type: SegType; html: string } | null // 唯一在流式中重渲的未闭合段
-  streaming: boolean
+  id: string;
+  role: "user" | "assistant";
+  content: string; // 仅 user 消息使用
+  segments: Segment[]; // 已闭合冻结的段(渲染一次后不再变动)
+  live: { type: SegType; html: string } | null; // 唯一在流式中重渲的未闭合段
+  streaming: boolean;
 }
 
 /** 一次流式回复的运行时上下文(不进响应式,避免大字符串深度代理) */
 interface StreamCtx {
-  msg: GptMsg
-  raw: string // 已到达的全部源文本(delta 直接拼入,无打字机)
-  frozen: number // 已冻结段数
-  dirty: boolean
-  rendering: boolean // 异步渲染中标记(防重入)
-  serverDone: boolean
-  rafId: number
+  msg: GptMsg;
+  raw: string; // 已到达的全部源文本(delta 直接拼入,无打字机)
+  frozen: number; // 已冻结段数
+  dirty: boolean;
+  rendering: boolean; // 异步渲染中标记(防重入)
+  serverDone: boolean;
+  rafId: number;
 }
 
-const topic = ref<'mixed' | 'math' | 'markdown' | 'mermaid'>('mixed')
-const loading = ref(false)
-const input = ref('')
-const chatList = ref<GptMsg[]>([])
-const scrollRef = ref<HTMLElement | null>(null)
-const pinned = ref(true) // 是否吸底
+const topic = ref<"mixed" | "math" | "markdown" | "mermaid">("mixed");
+const loading = ref(false);
+const input = ref("");
+const chatList = ref<GptMsg[]>([]);
+const scrollRef = ref<HTMLElement | null>(null);
+const pinned = ref(true); // 是否吸底
 
 const topicOptions = [
-  { label: '综合(含 mermaid)', value: 'mixed' },
-  { label: '数学公式', value: 'math' },
-  { label: 'Markdown', value: 'markdown' },
-  { label: 'Mermaid', value: 'mermaid' },
-]
+  { label: "综合(含 mermaid)", value: "mixed" },
+  { label: "数学公式", value: "math" },
+  { label: "Markdown", value: "markdown" },
+  { label: "Mermaid", value: "mermaid" },
+];
 
 // 演示统计:直观对比「全量重渲染」与「段级冻结」的差距
-const stats = reactive({ chunks: 0, liveRenders: 0, frozenSegs: 0 })
+const stats = reactive({ chunks: 0, liveRenders: 0, frozenSegs: 0 });
 
 // SSE 原始帧预览(取最近若干条 data:)
-const rawFrames = ref<string[]>([])
+const rawFrames = ref<string[]>([]);
 
-let abortController: AbortController | null = null
-let segSeq = 0
+let abortController: AbortController | null = null;
+let segSeq = 0;
 
 const topicPrompt: Record<string, string> = {
-  mixed: '用综合示例讲讲 SSE 流式渲染',
-  math: '用 KaTeX 演示一组数学公式',
-  markdown: '用 Markdown 讲讲表格和列表',
-  mermaid: '画一张 SSE 处理的 mermaid 流程图',
-}
+  mixed: "用综合示例讲讲 SSE 流式渲染",
+  math: "用 KaTeX 演示一组数学公式",
+  markdown: "用 Markdown 讲讲表格和列表",
+  mermaid: "画一张 SSE 处理的 mermaid 流程图",
+};
 
 /* ────────────────────── 流式 tokenizer ────────────────────── */
 
 interface SegDesc {
-  type: SegType
-  source: string
+  type: SegType;
+  source: string;
   /** 语法是否已闭合(未闭合=还可能继续长) */
-  closed: boolean
+  closed: boolean;
 }
 
 function escapeHtml(s: string): string {
-  return s.replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c] as string)
+  return s.replace(
+    /[&<>]/g,
+    (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" })[c] as string,
+  );
 }
 
 /**
@@ -101,110 +104,112 @@ function escapeHtml(s: string): string {
  * 不变式:未闭合段只可能出现在末尾(后续内容会被它吞掉)
  */
 function tokenize(raw: string): SegDesc[] {
-  const lines = raw.split('\n')
-  const out: SegDesc[] = []
-  let cur: string[] = []
-  let i = 0
+  const lines = raw.split("\n");
+  const out: SegDesc[] = [];
+  let cur: string[] = [];
+  let i = 0;
 
   const flushText = () => {
     if (cur.length) {
-      out.push({ type: 'text', source: cur.join('\n'), closed: true })
-      cur = []
+      out.push({ type: "text", source: cur.join("\n"), closed: true });
+      cur = [];
     }
-  }
+  };
 
   while (i < lines.length) {
-    const line = lines[i]
+    const line = lines[i];
 
     // ── 代码围栏(含 mermaid):闭合前整段吞入 ──
-    const fence = line.match(/^\s*(?:```|~~~)\s*(\S*)\s*$/)
+    const fence = line.match(/^\s*(?:```|~~~)\s*(\S*)\s*$/);
     if (fence) {
-      flushText()
-      const type: SegType = fence[1].toLowerCase() === 'mermaid' ? 'mermaid' : 'code'
-      const body: string[] = [line]
-      let closed = false
-      i++
+      flushText();
+      const type: SegType =
+        fence[1].toLowerCase() === "mermaid" ? "mermaid" : "code";
+      const body: string[] = [line];
+      let closed = false;
+      i++;
       while (i < lines.length) {
-        body.push(lines[i])
+        body.push(lines[i]);
         if (/^\s*(?:```|~~~)\s*$/.test(lines[i])) {
-          closed = true
-          i++
-          break
+          closed = true;
+          i++;
+          break;
         }
-        i++
+        i++;
       }
-      out.push({ type, source: body.join('\n'), closed })
-      if (!closed) return out // 未闭合围栏吞掉后面一切,等待流式继续
-      continue
+      out.push({ type, source: body.join("\n"), closed });
+      if (!closed) return out; // 未闭合围栏吞掉后面一切,等待流式继续
+      continue;
     }
 
     // ── 展示数学 $$:单行配对即闭合,否则收集到闭合行 ──
     if (/^\s*\$\$/.test(line)) {
-      flushText()
+      flushText();
       if (/^\s*\$\$\S.*\$\$\s*$/.test(line)) {
-        out.push({ type: 'math', source: line, closed: true })
-        i++
-        continue
+        out.push({ type: "math", source: line, closed: true });
+        i++;
+        continue;
       }
-      const body: string[] = [line]
-      let closed = false
-      i++
+      const body: string[] = [line];
+      let closed = false;
+      i++;
       while (i < lines.length) {
-        body.push(lines[i])
+        body.push(lines[i]);
         if (/\$\$\s*$/.test(lines[i])) {
-          closed = true
-          i++
-          break
+          closed = true;
+          i++;
+          break;
         }
-        i++
+        i++;
       }
-      out.push({ type: 'math', source: body.join('\n'), closed })
-      if (!closed) return out
-      continue
+      out.push({ type: "math", source: body.join("\n"), closed });
+      if (!closed) return out;
+      continue;
     }
 
     // ── 表格:连续 | 开头行;位于文本末尾视为仍在长行 ──
     if (/^\s*\|/.test(line)) {
-      flushText()
-      const body: string[] = []
+      flushText();
+      const body: string[] = [];
       while (i < lines.length && /^\s*\|/.test(lines[i])) {
-        body.push(lines[i])
-        i++
+        body.push(lines[i]);
+        i++;
       }
       if (i >= lines.length) {
-        out.push({ type: 'table', source: body.join('\n'), closed: false })
-        return out
+        out.push({ type: "table", source: body.join("\n"), closed: false });
+        return out;
       }
-      out.push({ type: 'table', source: body.join('\n'), closed: true })
-      continue
+      out.push({ type: "table", source: body.join("\n"), closed: true });
+      continue;
     }
 
     // ── 空行:段落边界 ──
-    if (line.trim() === '') {
-      flushText()
-      i++
-      continue
+    if (line.trim() === "") {
+      flushText();
+      i++;
+      continue;
     }
 
-    cur.push(line)
-    i++
+    cur.push(line);
+    i++;
   }
 
   // 末尾未断行的段落(还可能继续流字)
-  if (cur.length) out.push({ type: 'text', source: cur.join('\n'), closed: false })
-  return out
+  if (cur.length)
+    out.push({ type: "text", source: cur.join("\n"), closed: false });
+  return out;
 }
 
 /** 未闭合代码/mermaid 段:纯文本占位(不高亮、不出图) */
 function liveCodeHtml(d: SegDesc): string {
-  const m = d.source.match(/^\s*(?:```|~~~)\s*(\S*)/)
-  const lang = m?.[1] || (d.type === 'mermaid' ? 'mermaid' : 'text')
-  const body = d.source.replace(/^\s*(?:```|~~~)\s*\S*\n?/, '')
+  const m = d.source.match(/^\s*(?:```|~~~)\s*(\S*)/);
+  const lang = m?.[1] || (d.type === "mermaid" ? "mermaid" : "text");
+  const body = d.source.replace(/^\s*(?:```|~~~)\s*\S*\n?/, "");
   const badge =
-    d.type === 'mermaid'
+    d.type === "mermaid"
       ? '<div class="stream-badge">◌ 图将在代码闭合后渲染</div>'
-      : ''
-  return `<div class="code-stream"><div class="code-lang">${escapeHtml(lang)} ●</div>${badge}<pre>${escapeHtml(body)}</pre></div>`
+      : "";
+  return `<div class="code-stream"><div class="code-lang">${escapeHtml(lang)} ●</div>${badge}<pre>${escapeHtml(body)}</pre></div>`;
 }
 
 /* ────────────────────── 渲染主循环(rAF) ────────────────────── */
@@ -215,57 +220,57 @@ async function pushFrozenSegment(ctx: StreamCtx, d: SegDesc) {
     type: d.type,
     source: d.source,
     html: await renderMarkdown(d.source),
-    view: d.type === 'mermaid' ? 'preview' : 'code',
-  })
-  stats.frozenSegs++
+    view: d.type === "mermaid" ? "preview" : "code",
+  });
+  stats.frozenSegs++;
 }
 
 function startRenderLoop(ctx: StreamCtx) {
   const step = async () => {
     // 1. 段级渲染:闭合段冻结(一次),只重渲最后一个未闭合段
     if (ctx.dirty && !ctx.rendering) {
-      ctx.dirty = false
-      ctx.rendering = true
-      const descs = tokenize(ctx.raw)
+      ctx.dirty = false;
+      ctx.rendering = true;
+      const descs = tokenize(ctx.raw);
 
       while (ctx.frozen < descs.length && descs[ctx.frozen].closed) {
-        await pushFrozenSegment(ctx, descs[ctx.frozen])
-        ctx.frozen++
+        await pushFrozenSegment(ctx, descs[ctx.frozen]);
+        ctx.frozen++;
       }
 
-      const tail = descs[descs.length - 1]
+      const tail = descs[descs.length - 1];
       if (tail && !tail.closed) {
         ctx.msg.live = {
           type: tail.type,
           html:
-            tail.type === 'code' || tail.type === 'mermaid'
+            tail.type === "code" || tail.type === "mermaid"
               ? liveCodeHtml(tail) // 围栏未闭合:纯文本占位
               : await renderMarkdown(tail.source), // 文本/表格逐行长出;$$ 未配对时 protectMath 不成对→保持原文
-        }
-        stats.liveRenders++
+        };
+        stats.liveRenders++;
       } else {
-        ctx.msg.live = null
+        ctx.msg.live = null;
       }
-      ctx.rendering = false
-      scrollToBottomIfPinned()
+      ctx.rendering = false;
+      scrollToBottomIfPinned();
     }
 
     // 2. 收尾:源文本已完整,最后一段也冻结进 segments
     if (ctx.serverDone && !ctx.dirty && !ctx.rendering) {
-      const descs = tokenize(ctx.raw)
+      const descs = tokenize(ctx.raw);
       while (ctx.frozen < descs.length) {
-        await pushFrozenSegment(ctx, descs[ctx.frozen])
-        ctx.frozen++
+        await pushFrozenSegment(ctx, descs[ctx.frozen]);
+        ctx.frozen++;
       }
-      ctx.msg.live = null
-      ctx.msg.streaming = false
-      loading.value = false
-      scrollToBottomIfPinned()
-      return
+      ctx.msg.live = null;
+      ctx.msg.streaming = false;
+      loading.value = false;
+      scrollToBottomIfPinned();
+      return;
     }
-    ctx.rafId = requestAnimationFrame(step)
-  }
-  ctx.rafId = requestAnimationFrame(step)
+    ctx.rafId = requestAnimationFrame(step);
+  };
+  ctx.rafId = requestAnimationFrame(step);
 }
 
 /* ────────────────────── 流式入口 ────────────────────── */
@@ -273,118 +278,118 @@ function startRenderLoop(ctx: StreamCtx) {
 async function startStream(userPrompt: string) {
   chatList.value.push({
     id: `u-${Date.now()}`,
-    role: 'user',
+    role: "user",
     content: userPrompt,
     segments: [],
     live: null,
     streaming: false,
-  })
+  });
 
   const msg: GptMsg = {
     id: `a-${Date.now()}`,
-    role: 'assistant',
-    content: '',
+    role: "assistant",
+    content: "",
     segments: [],
     live: null,
     streaming: true,
-  }
-  chatList.value.push(msg)
-  pinned.value = true
-  await scrollToBottom()
+  };
+  chatList.value.push(msg);
+  pinned.value = true;
+  await scrollToBottom();
 
-  loading.value = true
-  stats.chunks = 0
-  stats.liveRenders = 0
-  stats.frozenSegs = 0
-  rawFrames.value = []
+  loading.value = true;
+  stats.chunks = 0;
+  stats.liveRenders = 0;
+  stats.frozenSegs = 0;
+  rawFrames.value = [];
 
   const ctx: StreamCtx = {
     msg,
-    raw: '',
+    raw: "",
     frozen: 0,
     dirty: false,
     rendering: false,
     serverDone: false,
     rafId: 0,
-  }
+  };
 
-  abortController = new AbortController()
-  startRenderLoop(ctx)
+  abortController = new AbortController();
+  startRenderLoop(ctx);
 
   try {
     await fetchSSE(`/api/sse/stream?topic=${topic.value}`, {
       signal: abortController.signal,
       onEvent: (ev) => {
-        if (ev.event === 'done' || ev.data === '[DONE]') {
-          ctx.serverDone = true
-          return
+        if (ev.event === "done" || ev.data === "[DONE]") {
+          ctx.serverDone = true;
+          return;
         }
-        stats.chunks++
-        rawFrames.value.push(ev.data)
-        if (rawFrames.value.length > 12) rawFrames.value.shift()
+        stats.chunks++;
+        rawFrames.value.push(ev.data);
+        if (rawFrames.value.length > 12) rawFrames.value.shift();
         try {
-          const { content } = JSON.parse(ev.data)
+          const { content } = JSON.parse(ev.data);
           // ChatGPT 同款:delta 到达直接拼进源文本,只置脏标记,渲染交给 rAF 合帧
-          ctx.raw += content
-          ctx.dirty = true
+          ctx.raw += content;
+          ctx.dirty = true;
         } catch {
           /* 忽略非 JSON 帧 */
         }
       },
-    })
-    ctx.serverDone = true
+    });
+    ctx.serverDone = true;
   } catch (err) {
-    if ((err as Error).name === 'AbortError') {
+    if ((err as Error).name === "AbortError") {
       // 用户点「停止」:就地收尾,保留已生成内容
-      ctx.serverDone = true
+      ctx.serverDone = true;
     } else {
-      ctx.serverDone = true
+      ctx.serverDone = true;
       if (!ctx.raw) {
         ctx.msg.segments.push({
           id: ++segSeq,
-          type: 'text',
-          source: '',
+          type: "text",
+          source: "",
           html: `<p class="conn-error">连接失败,请确认后端服务已启动(npm run dev:all)</p>`,
-          view: 'code',
-        })
+          view: "code",
+        });
       }
     }
   } finally {
-    abortController = null
+    abortController = null;
   }
 }
 
 function stopStream() {
-  abortController?.abort()
+  abortController?.abort();
 }
 
 function handleSend() {
-  const text = input.value.trim() || topicPrompt[topic.value]
-  input.value = ''
-  startStream(text)
+  const text = input.value.trim() || topicPrompt[topic.value];
+  input.value = "";
+  startStream(text);
 }
 
 function clearChat() {
-  chatList.value = []
-  rawFrames.value = []
+  chatList.value = [];
+  rawFrames.value = [];
 }
 
 /* ────────────────────── 滚动(pin-to-bottom) ────────────────────── */
 
 async function scrollToBottom() {
-  await nextTick()
-  const el = scrollRef.value
-  if (el) el.scrollTop = el.scrollHeight
+  await nextTick();
+  const el = scrollRef.value;
+  if (el) el.scrollTop = el.scrollHeight;
 }
 
 async function scrollToBottomIfPinned() {
-  if (pinned.value) await scrollToBottom()
+  if (pinned.value) await scrollToBottom();
 }
 
 function onScroll(e: Event) {
-  const el = e.target as HTMLElement
+  const el = e.target as HTMLElement;
   // 距底部 60px 以内视为「贴底」;用户向上翻阅时暂停自动滚动
-  pinned.value = el.scrollHeight - el.scrollTop - el.clientHeight < 60
+  pinned.value = el.scrollHeight - el.scrollTop - el.clientHeight < 60;
 }
 </script>
 
@@ -394,23 +399,50 @@ function onScroll(e: Event) {
       <a-col :xs="24" :lg="6">
         <a-card title="ChatGPT 渲染管线" size="small">
           <a-steps direction="vertical" size="small" :current="10">
-            <a-step title="ReadableStream" description="fetch 读字节流 + TextDecoder(stream) 按 SSE 规范解析" />
-            <a-step title="无打字机队列" description="delta 到达即拼进源文本,平滑性不靠匀速吐字而靠段冻结(ChatGPT 同款)" />
-            <a-step title="流式 tokenizer" description="按语法类型切段:text / code / mermaid / math / table" />
-            <a-step title="闭合即冻结" description="整段渲染一次永不重渲,只有未闭合段每帧重渲(rAF 合帧)" />
-            <a-step title="特殊段延后" description="代码闭合才高亮;$$ 配对才出公式;mermaid 闭合才出图" />
-            <a-step title="mermaid 预览/代码 tab" description="对齐 ChatGPT 图块交互" />
-            <a-step title="pin-to-bottom" description="用户上翻即停自动滚动,回底自动恢复" />
+            <a-step
+              title="ReadableStream"
+              description="fetch 读字节流 + TextDecoder(stream) 按 SSE 规范解析"
+            />
+            <a-step
+              title="无打字机队列"
+              description="delta 到达即拼进源文本,平滑性不靠匀速吐字而靠段冻结(ChatGPT 同款)"
+            />
+            <a-step
+              title="流式 tokenizer"
+              description="按语法类型切段:text / code / mermaid / math / table"
+            />
+            <a-step
+              title="闭合即冻结"
+              description="整段渲染一次永不重渲,只有未闭合段每帧重渲(rAF 合帧)"
+            />
+            <a-step
+              title="特殊段延后"
+              description="代码闭合才高亮;$$ 配对才出公式;mermaid 闭合才出图"
+            />
+            <a-step
+              title="mermaid 预览/代码 tab"
+              description="对齐 ChatGPT 图块交互"
+            />
+            <a-step
+              title="pin-to-bottom"
+              description="用户上翻即停自动滚动,回底自动恢复"
+            />
           </a-steps>
         </a-card>
 
         <a-card title="与全量重渲染对比" size="small" class="mt-card">
           <a-descriptions :column="1" size="small">
-            <a-descriptions-item label="SSE 页(对照)">每个 chunk 全量 parse + 整条 innerHTML 替换</a-descriptions-item>
-            <a-descriptions-item label="本页">无打字机,delta 到达即并入;按语法类型切段,闭合段冻结</a-descriptions-item>
+            <a-descriptions-item label="SSE 页(对照)"
+              >每个 chunk 全量 parse + 整条 innerHTML 替换</a-descriptions-item
+            >
+            <a-descriptions-item label="本页"
+              >无打字机,delta
+              到达即并入;按语法类型切段,闭合段冻结</a-descriptions-item
+            >
             <a-descriptions-item label="实时统计">
               <span class="mono">
-                帧 {{ stats.chunks }} · 未闭合段重渲 {{ stats.liveRenders }} · 冻结段 {{ stats.frozenSegs }}
+                帧 {{ stats.chunks }} · 未闭合段重渲 {{ stats.liveRenders }} ·
+                冻结段 {{ stats.frozenSegs }}
               </span>
             </a-descriptions-item>
           </a-descriptions>
@@ -418,8 +450,14 @@ function onScroll(e: Event) {
 
         <a-card title="SSE 原始帧(最近 12 条)" size="small" class="mt-card">
           <div class="frame-list">
-            <div v-for="(f, i) in rawFrames" :key="i" class="frame mono">data: {{ f }}</div>
-            <a-empty v-if="!rawFrames.length" :image-style="{ height: '30px' }" description="发送消息后查看" />
+            <div v-for="(f, i) in rawFrames" :key="i" class="frame mono">
+              data: {{ f }}
+            </div>
+            <a-empty
+              v-if="!rawFrames.length"
+              :image-style="{ height: '30px' }"
+              description="发送消息后查看"
+            />
           </div>
         </a-card>
       </a-col>
@@ -429,14 +467,31 @@ function onScroll(e: Event) {
           <template #title>
             <div class="card-title-row">
               <span>ChatGPT 风格流式对话(段级 tokenizer 增量渲染)</span>
-              <a-radio-group v-model:value="topic" :options="topicOptions" size="small" :disabled="loading" />
-              <a-button size="small" type="text" :disabled="loading" @click="clearChat">清空</a-button>
+              <a-radio-group
+                v-model:value="topic"
+                :options="topicOptions"
+                size="small"
+                :disabled="loading"
+              />
+              <a-button
+                size="small"
+                type="text"
+                :disabled="loading"
+                @click="clearChat"
+                >清空</a-button
+              >
             </div>
           </template>
 
           <div ref="scrollRef" class="chat-window" @scroll="onScroll">
-            <div v-for="msg in chatList" :key="msg.id" :class="['msg-row', msg.role]">
-              <div :class="['avatar', msg.role]">{{ msg.role === 'user' ? '你' : 'AI' }}</div>
+            <div
+              v-for="msg in chatList"
+              :key="msg.id"
+              :class="['msg-row', msg.role]"
+            >
+              <div :class="['avatar', msg.role]">
+                {{ msg.role === "user" ? "你" : "AI" }}
+              </div>
               <div class="msg-body">
                 <template v-if="msg.role === 'user'">
                   <div class="user-text">{{ msg.content }}</div>
@@ -448,11 +503,30 @@ function onScroll(e: Event) {
                     <div v-if="seg.type === 'mermaid'" class="mmd-card">
                       <div class="mmd-tabs">
                         <span class="mmd-title">mermaid</span>
-                        <button :class="['mmd-tab', { active: seg.view === 'preview' }]" @click="seg.view = 'preview'">预览</button>
-                        <button :class="['mmd-tab', { active: seg.view === 'code' }]" @click="seg.view = 'code'">代码</button>
+                        <button
+                          :class="[
+                            'mmd-tab',
+                            { active: seg.view === 'preview' },
+                          ]"
+                          @click="seg.view = 'preview'"
+                        >
+                          预览
+                        </button>
+                        <button
+                          :class="['mmd-tab', { active: seg.view === 'code' }]"
+                          @click="seg.view = 'code'"
+                        >
+                          代码
+                        </button>
                       </div>
-                      <div v-show="seg.view === 'preview'" class="md-body" v-html="seg.html" />
-                      <pre v-show="seg.view === 'code'" class="mmd-code">{{ seg.source }}</pre>
+                      <div
+                        v-show="seg.view === 'preview'"
+                        class="md-body"
+                        v-html="seg.html"
+                      />
+                      <pre v-show="seg.view === 'code'" class="mmd-code">{{
+                        seg.source
+                      }}</pre>
                     </div>
                     <div v-else class="md-body" v-html="seg.html" />
                   </template>
@@ -462,11 +536,16 @@ function onScroll(e: Event) {
                 </template>
               </div>
             </div>
-            <a-empty v-if="!chatList.length" description="发送消息,体验 ChatGPT 同款渲染管线" />
+            <a-empty
+              v-if="!chatList.length"
+              description="发送消息,体验 ChatGPT 同款渲染管线"
+            />
           </div>
 
           <div v-if="!pinned && loading" class="jump-bottom">
-            <a-button size="small" shape="round" @click="scrollToBottom">回到底部 ↓</a-button>
+            <a-button size="small" shape="round" @click="scrollToBottom"
+              >回到底部 ↓</a-button
+            >
           </div>
 
           <div class="input-bar">
@@ -476,7 +555,9 @@ function onScroll(e: Event) {
               :disabled="loading"
               @press-enter="handleSend"
             />
-            <a-button v-if="loading" danger @click="stopStream">停止生成</a-button>
+            <a-button v-if="loading" danger @click="stopStream"
+              >停止生成</a-button
+            >
             <a-button v-else type="primary" @click="handleSend">发送</a-button>
           </div>
         </a-card>
@@ -495,7 +576,7 @@ function onScroll(e: Event) {
 }
 
 .mono {
-  font-family: 'Fira Code', Consolas, monospace;
+  font-family: "Fira Code", Consolas, monospace;
   font-size: 12px;
 }
 
@@ -617,7 +698,9 @@ function onScroll(e: Event) {
 }
 
 @keyframes blink {
-  50% { opacity: 0; }
+  50% {
+    opacity: 0;
+  }
 }
 
 .jump-bottom {
@@ -714,7 +797,7 @@ function onScroll(e: Event) {
 }
 
 :deep(.md-body code) {
-  font-family: 'Fira Code', monospace;
+  font-family: "Fira Code", monospace;
   font-size: 13px;
 }
 
