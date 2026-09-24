@@ -1,26 +1,28 @@
 <script setup lang="ts">
-import { computed } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { computed } from "vue";
+import { useRoute, useRouter } from "vue-router";
 
-const route = useRoute()
-const router = useRouter()
+const route = useRoute();
+const router = useRouter();
 
 const navItems = [
-  { path: '/chat', label: '消息发送' },
-  { path: '/tree', label: '树形勾选' },
-  { path: '/websocket', label: 'WebSocket' },
-  { path: '/sse', label: 'SSE 流式' },
-  { path: '/tinymce', label: 'TinyMCE' },
-  { path: '/amap', label: '高德地图' },
-  { path: '/logistics-track', label: '物流轨迹' },
-  { path: '/scroll-spy', label: '目录联动' },
-  { path: '/excel', label: 'Excel解析' },
-  { path: '/chunk-upload', label: '切片上传' },
-  { path: '/logicflow', label: '工作流' },
-  { path: '/print-dual-table', label: '双表打印' },
-]
+  { path: "/chat", label: "消息发送" },
+  { path: "/tree", label: "树形勾选" },
+  { path: "/websocket", label: "WebSocket" },
+  { path: "/sse", label: "SSE 流式" },
+  { path: "/sse-chatgpt", label: "ChatGPT 渲染" },
+  { path: "/tinymce", label: "TinyMCE" },
+  { path: "/amap", label: "高德地图" },
+  { path: "/logistics-track", label: "物流轨迹" },
+  { path: "/scroll-spy", label: "目录联动" },
+  { path: "/excel", label: "Excel解析" },
+  { path: "/chunk-upload", label: "切片上传" },
+  { path: "/logicflow", label: "工作流" },
+  { path: "/print-dual-table", label: "双表打印" },
+  { path: "/login", label: "扫码登录" },
+];
 
-const selectedKey = computed(() => route.path)
+const selectedKey = computed(() => route.path);
 </script>
 
 <template>

@@ -1,0 +1,466 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Swiper 轮播 · PC 版 · 中间压住两侧 · 两侧顶到父元素边缘</title>
+
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/swiper@8.4.7/swiper-bundle.min.css">
+
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        html,
+        body {
+            overflow-x: hidden;
+        }
+
+        body {
+            min-height: 100vh;
+            background: #0f1118;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+        }
+
+        /* 父元素：最宽 1200px，宽屏下居中。两侧卡片的外沿顶在它的左右边界上 */
+        /* 几何全部以容器实际宽度为准，限宽后无需改任何配置 */
+        .carousel {
+            position: relative;
+            width: 100%;
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        /* ---------- Swiper 容器 ---------- */
+        /* 高度 = 卡片高度 + 舞台余量（给阴影和卡片下方的分页点留位置） */
+        .carousel .swiper {
+            width: 100%;
+            height: calc(var(--slide-h, 320px) + var(--stage-extra, 0px));
+            overflow: hidden;
+        }
+
+        /* 卡片比容器矮时垂直居中 */
+        .carousel .swiper-wrapper {
+            align-items: center;
+        }
+
+        /* ---------- 卡片 ---------- */
+        /*
+         * 宽度 = 父元素宽度的 --slide-f 倍。
+         * 必须用 slidesPerView: 'auto' 让 Swiper 读这里的 CSS 宽度；
+         * 如果 slidesPerView 写数字，Swiper 会自己往卡片上写 inline width，这条就失效了。
+         */
+        .carousel .swiper-slide {
+            width: calc(var(--slide-f, 0.72) * 100%);
+            height: var(--slide-h, 320px);
+            border-radius: var(--radius, 24px);
+            overflow: hidden;
+            background-color: #1b1f2a;
+            background-size: cover;
+            background-position: center;
+            background-repeat: no-repeat;
+            box-shadow: 0 16px 44px rgba(0, 0, 0, .55);
+            /*
+             * 关键：不要用 transition 简写！
+             * Swiper 给卡片加位移过渡，靠的是 CSS 里的 transition-property: transform
+             * 加上它自己写的 inline transition-duration。
+             * 简写会把 transition-property 覆盖成只有 box-shadow，卡片就会「瞬移」。
+             */
+            transition-property: transform, box-shadow;
+            transition-duration: 0ms;
+            transition-timing-function: cubic-bezier(.22, .61, .36, 1);
+            will-change: transform;
+        }
+
+        /* 当前卡片：阴影更重，配合更高的 z-index 形成「压住两侧」的层次 */
+        .carousel .swiper-slide-active {
+            box-shadow: 0 26px 68px rgba(0, 0, 0, .72);
+        }
+
+        .slide-mask {
+            position: absolute;
+            inset: 0;
+            border-radius: inherit;
+            background: linear-gradient(to top, rgba(0, 0, 0, .8) 0%, rgba(0, 0, 0, .2) 42%, transparent 68%);
+            display: flex;
+            flex-direction: column;
+            justify-content: flex-end;
+            padding: var(--pad, 20px) var(--pad, 20px) var(--pad-b, 20px);
+            color: #fff;
+        }
+
+        .slide-title {
+            font-size: var(--title, 18px);
+            font-weight: 600;
+            margin-bottom: 4px;
+        }
+
+        .slide-desc {
+            font-size: var(--desc, 13px);
+            opacity: .78;
+        }
+
+        /* 右侧卡片的可见区在它右半边，文字跟着靠右，否则会被中间卡片压住 */
+        .carousel .swiper-slide-next .slide-mask {
+            align-items: flex-end;
+            text-align: right;
+        }
+
+        /* 非当前卡片的文字淡一点，视觉重心留给中间那张 */
+        .carousel .swiper-slide:not(.swiper-slide-active) .slide-mask {
+            opacity: .62;
+        }
+
+        /* ---------- 分页点（进度条样式） ---------- */
+        .dots {
+            position: absolute;
+            left: 0;
+            right: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: var(--dot-gap, 8px);
+            z-index: 30;
+            pointer-events: none;
+        }
+
+        .dot {
+            position: relative;
+            display: block;
+            width: var(--dot-w, 40px);
+            height: var(--dot-h, 5px);
+            padding: 0;
+            border: 0;
+            border-radius: 999px;
+            background: rgba(255, 255, 255, .22);
+            overflow: hidden;
+            cursor: pointer;
+            pointer-events: auto;
+            transition: width .3s ease, background .3s ease;
+        }
+
+        .dot-fill {
+            display: block;
+            width: 0;
+            height: 100%;
+            border-radius: inherit;
+            background: #fff;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="carousel" id="carousel">
+        <div class="swiper" id="mySwiper">
+            <div class="swiper-wrapper" id="wrapper"></div>
+        </div>
+        <div class="dots" id="dots"></div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.7.1/jquery.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/swiper@8.4.7/swiper-bundle.min.js"></script>
+    <script>
+        (function ($) {
+            'use strict';
+
+            /* =========================================================
+               一、数据
+               ========================================================= */
+            var SLIDES = [
+                { img: 'https://picsum.photos/seed/sw01/1200/700', title: 'Image 1', desc: 'Random photo' },
+                { img: 'https://picsum.photos/seed/sw02/1200/700', title: 'Image 2', desc: 'Random photo' },
+                { img: 'https://picsum.photos/seed/sw03/1200/700', title: 'Image 3', desc: 'Random photo' },
+                { img: 'https://picsum.photos/seed/sw04/1200/700', title: 'Image 4', desc: 'Random photo' },
+                { img: 'https://picsum.photos/seed/sw05/1200/700', title: 'Image 5', desc: 'Random photo' },
+                { img: 'https://picsum.photos/seed/sw06/1200/700', title: 'Image 6', desc: 'Random photo' },
+                { img: 'https://picsum.photos/seed/sw07/1200/700', title: 'Image 7', desc: 'Random photo' },
+                { img: 'https://picsum.photos/seed/sw08/1200/700', title: 'Image 8', desc: 'Random photo' }
+            ];
+
+            /* =========================================================
+               二、配置：PC 单端，改这里就行
+
+                 centerWidth   当前卡片宽度。0~1 = 占父元素宽度的比例；也可写 '520px'
+                 aspect        宽高比（620/360 ≈ 1.72），卡片高度按它自动算
+
+                 sideScale     两侧卡片相对当前卡片的「表观」缩放
+                                 0.8 = 层次最明显（PC 默认）
+                               它决定侧卡看起来多大、以及往中间卡片下面钻多深。
+
+                 edgeGap       两侧卡片外沿距父元素边缘的距离(px)
+                                 0   = 外沿正好顶到父元素边缘（默认）
+                                 > 0 = 侧卡整体往中间收，边缘留缝
+                                 < 0 = 侧卡往外溢，外沿被父元素裁掉
+
+                 stageExtra    容器比卡片高出的部分（给阴影、给分页点留位置）
+                 dots.bottom   分页点距容器底部的距离
+               ========================================================= */
+            var CONFIG = {
+                centerWidth: 0.92,
+                aspect: 620 / 360,
+                sideScale: 0.8,
+                edgeGap: 0,
+                radius: 28,
+                pad: 26,
+                title: 20,
+                desc: 14,
+                stageExtra: 92,
+                dots: { bottom: 26, gap: 8, w: 42, h: 5 }
+            };
+
+            var AUTOPLAY = 15000;   // 每张停留时长(ms)
+
+            /* =========================================================
+               三、几何：把「卡片宽度 / 侧卡缩放 / 侧卡外沿间隙」
+                       反推成 coverflow 的 depth + stretch
+
+               Swiper coverflow 的投影规则（透视 P = 1200px，写死在它的 CSS 里）：
+                 1) 每张卡片先做 translate3d(translateX, 0, translateZ)
+                    translateZ = -depth × |offsetMultiplier|
+                 2) 透视把它整体缩放 s = P / (P + depth × |m|)
+                 3) translateX = stretch × offsetMultiplier，而 stretch 的百分比是
+                    相对「卡片宽度 W」的，不是父元素宽度
+                 4) z-index = -|round(m)| + 1，所以中间那张天然盖在两侧之上
+
+               关键点：透视同时缩放「尺寸」和「水平位移」，
+               所以侧卡投影后的中心 = 父元素中心 + (W - stretchPx) × s，
+               而不是 父元素中心 + W - stretchPx。
+
+               要让侧卡外沿正好落在距父元素边缘 edgeGap 的位置：
+                 (W - stretchPx) × s + (W/2) × s = C/2 - edgeGap
+               ⇒ stretchPx = 1.5W - (C/2 - edgeGap) / s
+                 其中 1.5 = 1（相邻卡片的中心距，因为 spaceBetween = 0）+ 0.5（自己的半宽）
+                      (C/2 - edgeGap) / s = 把父元素半宽换算成「投影前的卡片宽度」
+
+               depth 由侧卡缩放反推：s = 1200 / (1200 + depth) ⇒ depth = 1200 × (1/s - 1)
+               ========================================================= */
+            var PERSPECTIVE = 1200;
+
+            function solveGeometry(C) {
+                var W = (typeof CONFIG.centerWidth === 'string')
+                    ? parseFloat(CONFIG.centerWidth)
+                    : C * CONFIG.centerWidth;                   // 卡片宽度(px)
+                var H = W / CONFIG.aspect;
+                var f = W / C;                                   // 卡片宽度占父元素宽度的比例
+                var s = CONFIG.sideScale;                        // 侧卡投影后的缩放
+                var depth = PERSPECTIVE * (1 / s - 1);
+                var stretchPx = 1.5 * W - (C / 2 - CONFIG.edgeGap) / s;
+                var stretch = stretchPx / W * 100;               // 百分比基数是卡片宽度
+
+                return { W: W, H: H, f: f, s: s, depth: depth, stretch: stretch };
+            }
+
+            /* =========================================================
+               四、状态
+               ========================================================= */
+            var $carousel = $('#carousel');
+            var $swiperEl = $('#mySwiper');
+            var $wrapper = $('#wrapper');
+            var $dots = $('#dots');
+
+            var swiper = null;
+            var progStart = 0;
+            var paused = false;
+
+            /* =========================================================
+               五、样式落地 + 推给 Swiper
+               ========================================================= */
+            /* 把当前配置写进 CSS 变量 */
+            function applyConfig() {
+                var C = $swiperEl.width();
+                var g = solveGeometry(C);
+
+                $carousel.css({
+                    '--slide-f': g.f,
+                    '--slide-h': g.H + 'px',
+                    '--stage-extra': CONFIG.stageExtra + 'px',
+                    '--radius': CONFIG.radius + 'px',
+                    '--pad': CONFIG.pad + 'px',
+                    '--title': CONFIG.title + 'px',
+                    '--desc': CONFIG.desc + 'px'
+                });
+
+                $dots.css({
+                    bottom: CONFIG.dots.bottom + 'px',
+                    '--dot-gap': CONFIG.dots.gap + 'px',
+                    '--dot-w': CONFIG.dots.w + 'px',
+                    '--dot-h': CONFIG.dots.h + 'px'
+                });
+
+                return g;
+            }
+
+            /* 把 depth / stretch 推给 Swiper，并让它重新量一遍、重排一次 */
+            function pushGeometry(g) {
+                if (!swiper) return;
+
+                /*
+                 * 先把 3D 变换和 Swiper 缓存的卡片宽度清掉。
+                 * 卡片身上带着 translateZ 时，getBoundingClientRect() 量到的是
+                 * 「透视投影之后」的宽度（更窄）。不清掉的话每 update() 一次就缩一圈，
+                 * 卡片宽度、stretch 的百分比基数、吸附位置全部跟着算错。
+                 */
+                swiper.slides.each(function () {
+                    this.style.transform = '';
+                    this.style.zIndex = '';
+                    delete this.swiperSlideSize;
+                });
+
+                swiper.params.coverflowEffect.depth = g.depth;
+                swiper.params.coverflowEffect.stretch = g.stretch.toFixed(4) + '%';
+
+                swiper.update();
+
+                /*
+                 * update() 不一定会重跑 coverflow 的变换，而且卡片宽度变了以后
+                 * 旧的 translate 也不再对准当前卡片，所以顺手归位一次（0ms、不触发回调）。
+                 * 这一步内部会 emit('setTranslate')，effect 也就跟着重算了。
+                 */
+                if (swiper.params.loop && typeof swiper.slideToLoop === 'function') {
+                    swiper.slideToLoop(swiper.realIndex, 0, false);
+                } else {
+                    swiper.slideTo(swiper.activeIndex, 0, false);
+                }
+            }
+
+            /* =========================================================
+               六、分页点
+               ========================================================= */
+            function buildDots() {
+                $dots.empty();
+                $.each(SLIDES, function (i) {
+                    $('<button type="button" class="dot"><span class="dot-fill"></span></button>')
+                        .attr('aria-label', '第 ' + (i + 1) + ' 张')
+                        .appendTo($dots)
+                        .on('click', function () {
+                            if (!swiper) return;
+                            if (swiper.params.loop && typeof swiper.slideToLoop === 'function') {
+                                swiper.slideToLoop(i);
+                            } else {
+                                swiper.slideTo(i);
+                            }
+                        });
+                });
+            }
+
+            function updateDots() {
+                if (!swiper) return;
+                var real = swiper.realIndex;      // loop 模式下 activeIndex 是「夹带复制品」的下标，要用 realIndex
+                $dots.children('.dot').each(function (i) {
+                    $(this).toggleClass('is-active', i === real);
+                });
+                $dots.children('.dot').find('.dot-fill').css('width', '0%');
+                progStart = performance.now();
+            }
+
+            /* =========================================================
+               七、自动播放 + 进度条（自己用 rAF 驱动，进度才够跟手）
+               ========================================================= */
+            function tick(now) {
+                if (!paused && swiper && !swiper.touching) {
+                    var pct = (now - progStart) / AUTOPLAY;
+                    if (pct >= 1) {
+                        progStart = now;
+                        swiper.slideNext();
+                    } else {
+                        $dots.children('.dot').eq(swiper.realIndex)
+                            .find('.dot-fill').css('width', (pct * 100) + '%');
+                    }
+                }
+                requestAnimationFrame(tick);
+            }
+
+            /* =========================================================
+               八、初始化
+               ========================================================= */
+            function buildSlides() {
+                $wrapper.children('.swiper-slide').remove();
+                $.each(SLIDES, function (i, item) {
+                    $('<div class="swiper-slide"></div>')
+                        .attr('data-index', i)
+                        .css('background-image', 'url("' + item.img + '")')
+                        .html(
+                            '<div class="slide-mask">' +
+                            '<div class="slide-title">' + item.title + '</div>' +
+                            '<div class="slide-desc">' + item.desc + '</div>' +
+                            '</div>'
+                        )
+                        .appendTo($wrapper);
+                });
+            }
+
+            function initSwiper() {
+                swiper = new Swiper('#mySwiper', {
+                    effect: 'coverflow',
+                    loop: true,
+                    slidesPerView: 'auto',   // 让 Swiper 读 CSS 里的宽度，而不是自己写 inline width
+                    spaceBetween: 0,         // 必须为 0，否则 1.5W 里的那个「1」就不成立了
+                    centeredSlides: true,    // 当前卡片居中，coverflow 的几何才成立
+                    grabCursor: true,
+                    slideToClickedSlide: true,   // 点两侧卡片直接切过去
+                    speed: 550,
+                    watchSlidesProgress: true,
+                    resizeObserver: false,   // 尺寸变化交给我们自己的 refresh 处理
+                    coverflowEffect: {
+                        rotate: 0,
+                        scale: 1,            // 缩放交给 depth（透视）算，这里保持 1
+                        stretch: '10%',      // 占位，init 之后立刻被 pushGeometry 覆盖
+                        depth: 300,          // 同上
+                        modifier: 1,
+                        slideShadows: false  // 它自带的阴影会盖在圆角上，用 box-shadow 代替
+                    },
+                    on: {
+                        slideChange: function () {
+                            updateDots();
+                        }
+                    }
+                });
+            }
+
+            function refresh() {
+                pushGeometry(applyConfig());
+                updateDots();
+            }
+
+            $(function () {
+                buildSlides();               // 1. 先用 jQuery 生成卡片
+                applyConfig();               // 2. 把宽高写进 CSS 变量，Swiper 才量得到真实宽度
+                initSwiper();                // 3. 初始化 Swiper
+                buildDots();                 // 4. 生成分页点
+                pushGeometry(applyConfig()); // 5. 把 depth / stretch 推给 Swiper 并重排
+                updateDots();
+                requestAnimationFrame(tick);
+
+                // 切到后台就暂停，回来重新计时
+                $(document).on('visibilitychange', function () {
+                    paused = document.hidden;
+                    if (!paused) progStart = performance.now();
+                });
+
+                // PC 上窗口宽度随时可变，防抖后重解一次几何
+                var rt;
+                $(window).on('resize', function () {
+                    clearTimeout(rt);
+                    rt = setTimeout(refresh, 120);
+                });
+            });
+
+            /* 调参用：控制台里改 CAROUSEL.CONFIG.sideScale 之类的，再 CAROUSEL.apply() */
+            window.CAROUSEL = {
+                CONFIG: CONFIG,
+                apply: function () { refresh(); },
+                geometry: function () { return solveGeometry($swiperEl.width()); },
+                get swiper() { return swiper; }
+            };
+
+        })(jQuery);
+    </script>
+</body>
+
+</html>

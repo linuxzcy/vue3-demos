@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+
+    <style>
+        .text-box {
+            width: 500px;
+            line-height: 24px;
+            font-size: 16px;
+        }
+
+        .text-content {
+            word-break: break-all;
+        }
+
+        .more {
+            color: #1677ff;
+            cursor: pointer;
+            white-space: nowrap;
+        }
+    </style>
+</head>
+
+<body>
+
+<div class="text-box">
+    <div class="text-content">
+        这是一段非常长的文本内容，这是一段非常长的文本内容，
+        这是一段非常长的文本内容，这是一段非常长的文本内容，
+        这是一段非常长的文本内容，这是一段非常长的文本内容，
+        这是一段非常长的文本内容，这是一段非常长的文本内容，
+        这是一段非常长的文本内容，这是一段非常长的文本内容。
+    </div>
+</div>
+
+
+<script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+
+<script>
+$(function () {
+
+    $('.text-content').each(function () {
+
+        const $el = $(this);
+        const originalText = $el.text().trim();
+
+        const lineHeight = parseFloat($el.css('line-height'));
+        const maxHeight = lineHeight * 3;
+
+        // 先判断原始文本是否超过 3 行
+        if ($el[0].scrollHeight <= maxHeight) {
+            return;
+        }
+
+        // 二分查找合适的文字长度
+        let start = 0;
+        let end = originalText.length;
+        let result = '';
+
+        while (start <= end) {
+
+            const middle = Math.floor((start + end) / 2);
+
+            const text = originalText.substring(0, middle);
+
+            $el.html(
+                text + '... <span class="more">More</span>'
+            );
+
+            if ($el[0].scrollHeight <= maxHeight) {
+                result = text;
+                start = middle + 1;
+            } else {
+                end = middle - 1;
+            }
+        }
+
+        // 最终结果
+        $el.html(
+            result + '... <span class="more">More</span>'
+        );
+
+        // 点击 More
+        $el.on('click', '.more', function () {
+
+            $el.html(
+                originalText +
+                ' <span class="more">Less</span>'
+            );
+
+        });
+
+        // 点击 Less
+        $el.on('click', '.more', function () {
+
+            if ($(this).text() === 'Less') {
+
+                $el.html(
+                    result + '... <span class="more">More</span>'
+                );
+
+            }
+        });
+
+    });
+
+});
+</script>
+
+</body>
+</html>

@@ -1,0 +1,494 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Document</title>
+    <!-- 引入jquery -->
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <style>
+        #app {
+            display: flex;
+            width: 1280px;
+            margin: 0 auto;
+        }
+
+        .left {
+            flex: 1;
+        }
+
+        .right {
+            width: 400px;
+        }
+
+        .topic {
+            height: 200px;
+            border: 1px solid #ccc;
+            position: sticky;
+            top: 20px;
+            left: 0;
+            padding: 10px;
+        }
+
+        .tp {
+            height: 100px;
+        }
+
+        .topic-item {
+            height: 30px;
+            line-height: 30px;
+            padding-left: 20px;
+            cursor: pointer;
+        }
+
+        .active-item {
+            background-color: rgb(246, 218, 165);
+        }
+
+        .p-2 {
+            margin-left: 20px;
+        }
+    </style>
+</head>
+
+<body>
+    <div id="app">
+        <div class="left">
+            <div class="content">
+                <h3>TEST</h3>
+                <p>
+                    PoE is also known fPoE is also known for its highly customizable endgame gameplay. In this respect,
+                    PoE is also known fPoE is also known for its highly customizable endgame gameplay. In this respect,
+                    PoE is also known fPoE is also known for its highly customizable endgame gameplay. In this respect,
+                    PoE is also known fPoE is also known for its highly customizable endgame gameplay. In this respect,
+                    PoE is also known fPoE is also known for its highly customizable endgame gameplay. In this respect,
+                    PoE is also known fPoE is also known for its highly customizable endgame gameplay. In this respect,
+                    PoE is also known fPoE is also known for its highly customizable endgame gameplay. In this respect,
+                    PoE is also known fPoE is also known for its highly customizable endgame gameplay. In this respect,
+                    PoE is also known fPoE is also known for its highly customizable endgame gameplay. In this respect,
+                    PoE is also known fPoE is also known for its highly customizable endgame gameplay. In this respect,
+                    PoE is also known fPoE is also known for its highly customizable endgame gameplay. In this respect,
+                    PoE is also known fPoE is also known for its highly customizable endgame gameplay. In this respect,
+                    PoE is also known fPoE is also known for its highly customizable endgame gameplay. In this respect,
+                    PoE is also known fPoE is also known for its highly customizable endgame gameplay. In this respect,
+                    PoE is also known fPoE is also known for its highly customizable endgame gameplay. In this respect,
+                    PoE is also known fPoE is also known for its highly customizable endgame gameplay. In this respect,
+                    PoE is also known fPoE is also known for its highly customizable endgame gameplay. In this respect,
+                    PoE is also known fPoE is also known for its highly customizable endgame gameplay. In this respect,
+                    PoE is also known fPoE is also known for its highly customizable endgame gameplay. In this respect,
+                    PoE is also known fPoE is also known for its highly customizable endgame gameplay. In this respect,
+                    PoE is also known fPoE is also known for its highly customizable endgame gameplay. In this respect,
+                    PoE is also known fPoE is also known for its highly customizable endgame gameplay. In this respect,
+                    PoE is also known fPoE is also known for its highly customizable endgame gameplay. In this respect,
+                    PoE is also known fPoE is also known for its highly customizable endgame gameplay. In this respect,
+                    PoE is also known fPoE is also known for its highly customizable endgame gameplay. In this respect,
+                    PoE is also known fPoE is also known for its highly customizable endgame gameplay. In this respect,
+                    PoE is also known fPoE is also known for its highly customizable endgame gameplay. In this respect,
+                    PoE is also known fPoE is also known for its highly customizable endgame gameplay. In this respect,
+                    PoE is also known fPoE is also known for its highly customizable endgame gameplay. In this respect,
+                    PoE is also known fPoE is also known for its highly customizable endgame gameplay. In this respect,
+                    PoE is also known fPoE is also known for its highly customizable endgame gameplay. In this respect,
+                    PoE is also known fPoE is also known for its highly customizable endgame gameplay. In this respect,
+                    PoE is also known fPoE is also known for its highly customizable endgame gameplay. In this respect,
+                    PoE is also known fPoE is also known for its highly customizable endgame gameplay. In this respect,
+                    PoE is also known fPoE is also known for its highly customizable endgame gameplay. In this respect,
+                    PoE is also known fPoE is also known for its highly customizable endgame gameplay. In this respect,
+                    PoE is also known fPoE is also known for its highly customizable endgame gameplay. In this respect,
+                    PoE is also known fPoE is also known for its highly customizable endgame gameplay. In this respect,
+                    PoE is also known fPoE is also known for its highly customizable endgame gameplay. In this respect,
+                    PoE is also known fPoE is also known for its highly customizable endgame gameplay. In this respect,
+                    PoE is also known fPoE is also known for its highly customizable endgame gameplay. In this respect,
+                    PoE is also known fPoE is also known for its highly customizable endgame gameplay. In this respect,
+                    PoE is also known fPoE is also known for its highly customizable endgame gameplay. In this respect,
+                    PoE is also known fPoE is also known for its highly customizable endgame gameplay. In this respect,
+                    PoE is also known fPoE is also known for its highly customizable endgame gameplay. In this respect,
+                    PoE is also known fPoE is also known for its highly customizable endgame gameplay. In this respect,
+                    PoE is also known fPoE is also known for its highly customizable endgame gameplay. In this respect,
+                    PoE is also known fPoE is also known for its highly customizable endgame gameplay. In this respect,
+                    PoE is also known fPoE is also known for its highly customizable endgame gameplay. In this respect,
+                    PoE is also known fPoE is also known for its highly customizable endgame gameplay. In this respect,
+                    PoE is also known fPoE is also known for its highly customizable endgame gameplay. In this respect,
+                    PoE is also known fPoE is also known for its highly customizable endgame gameplay. In this respect,
+                    PoE is also known fPoE is also known for its highly customizable endgame gameplay. In this respect,
+                    PoE is also known fPoE is also known for its highly customizable endgame gameplay. In this respect,
+                    Endgame System
+                </p>
+                <h2>Left Content</h2>
+                <p>
+                    Endgame System
+                    PoE is also known fPoE is also known for its highly customizable endgame gameplay. In this respect,
+                    the two games arePoE is also known for its highly customizable endgame gameplay. In this respect,
+                    the two games arePoE is also known for its highly customizable endgame gameplay. In this respect,
+                    the two games arePoE is also known for its highly customizable endgame gameplay. In this respect,
+                    the two games arePoE is also known for its highly customizable endgame gameplay. In this respect,
+                    the two games arePoE is also known for its highly customizable endgame gameplay. In this respect,
+                    the two games arePoE is also known for its highly customizable endgame gameplay. In this respect,
+                    the two games arePoE is also known for its highly customizable endgame gameplay. In this respect,
+                    the two games arePoE is also known for its highly customizable endgame gameplay. In this respect,
+                    the two games areor its highly customizable endgame gameplay. In this respect, the two games are
+                    PoE is also known for its highly customizable endgame gameplay. In this respect, the two games are
+                    PoE is also known for its highly customizable endgame gameplay. In this respect, the two games are
+                    PoE is also known for its highly customizable endgame gameplay. In this respect, the two games are
+                    PoE is also known for its highly customizable endgame gameplay. In this respect, the two games are
+                    PoE is also known for its highly customizable endgame gameplay. In this respect, the two games are
+                    very similar and often borrow from each other.
+
+                    The game's endgame system is centered around Atlas system - Atlas system from PoE 1, introduced in
+                    2016, has been a source of pride for players, and therefore its core framework has remained almost
+                    unchanged. PoE 2 almost entirely adopted Atlas system from PoE 1.
+
+                    However, with the continuous updates to PoE 2, Atlas system from PoE 1 gradually became somewhat
+                    rigid, and many players began to find Atlas system in PoE 2 more enjoyable.
+
+                    In PoE 2, Atlas is a procedurally generated, infinitely explorable map where players can move from
+                    node to node on a huge map, searching for unique points of interest.
+
+                    This design breaks away from the fixed "repeatedly farming the same favorite map" pattern of PoE 1's
+                    endgame gameplay, replacing it with a continuous sense of exploration and variability.
+                </p>
+                <h3>333Left Content 1</h3>
+                <p>
+                    Endgame System
+                    PoE is also known for its highly customizable endgame gameplay. In this respect, the two games are
+                    PoE is also known for its highly customizable endgame gameplay. In this respect, the two games are
+                    PoE is also known for its highly customizable endgame gameplay. In this respect, the two games are
+                    PoE is also known for its highly customizable endgame gameplay. In this respect, the two games are
+                    PoE is also known for its highly customizable endgame gameplay. In this respect, the two games are
+                    PoE is also known for its highly customizable endgame gameplay. In this respect, the two games are
+                    PoE is also known for its highly customizable endgame gameplay. In this respect, the two games are
+                    very similar and often borrow from each other.
+
+                    The game's endgame system is centered around Atlas system - Atlas system from PoE 1, introduced in
+                    2016, has been a source of pride for players, and therefore its core framework has remained almost
+                    unchanged. PoE 2 almost entirely adopted Atlas system from PoE 1.
+
+                    However, with the continuous updates to PoE 2, Atlas system from PoE 1 gradually became somewhat
+                    rigid, and many players began to find Atlas system in PoE 2 more enjoyable.
+
+                    In PoE 2, Atlas is a procedurally generated, infinitely explorable map where players can move from
+                    node to node on a huge map, searching for unique points of interest.
+
+                    This design breaks away from the fixed "repeatedly farming the same favorite map" pattern of PoE 1's
+                    endgame gameplay, replacing it with a continuous sense of exploration and variability.
+                </p>
+                <h3>3333Left Content 2</h3>
+                <p>
+                    Endgame System
+                    PoE is also known for its highly customizable endgame gameplay. In this respect, the two games are
+                    PoE is also known for its highly customizable endgame gameplay. In this respect, the two games are
+                    PoE is also known for its highly customizable endgame gameplay. In this respect, the two games are
+                    PoE is also known for its highly customizable endgame gameplay. In this respect, the two games are
+                    PoE is also known for its highly customizable endgame gameplay. In this respect, the two games are
+                    PoE is also known for its highly customizable endgame gameplay. In this respect, the two games are
+                    PoE is also known for its highly customizable endgame gameplay. In this respect, the two games are
+                    very similar and often borrow from each other.
+
+                    The game's endgame system is centered around Atlas system - Atlas system from PoE 1, introduced in
+                    2016, has been a source of pride for players, and therefore its core framework has remained almost
+                    unchanged. PoE 2 almost entirely adopted Atlas system from PoE 1.
+
+                    However, with the continuous updates to PoE 2, Atlas system from PoE 1 gradually became somewhat
+                    rigid, and many players began to find Atlas system in PoE 2 more enjoyable.
+
+                    In PoE 2, Atlas is a procedurally generated, infinitely explorable map where players can move from
+                    node to node on a huge map, searching for unique points of interest.
+
+                    This design breaks away from the fixed "repeatedly farming the same favorite map" pattern of PoE 1's
+                    endgame gameplay, replacing it with a continuous sense of exploration and variability.
+                </p>
+                <h2>22222内容2 222222</h2>
+                <p>
+                    PoE is also known for its highly customizable endgame gameplay. In this respect, the two games are
+                    PoE is also known for its highly customizable endgame gameplay. In this respect, the two games are
+                    PoE is also known for its highly customizable endgame gameplay. In this respect, the two games are
+                    PoE is also known for its highly customizable endgame gameplay. In this respect, the two games are
+                    PoE is also known for its highly customizable endgame gameplay. In this respect, the two games are
+                    PoE is also known for its highly customizable endgame gameplay. In this respect, the two games are
+                    Endgame System
+                    PoE is also known for its highly customizable endgame gameplay. In this respect, the two games are
+                    very similar and often borrow from each other.
+
+                    The game's endgame system is centered around Atlas system - Atlas system from PoE 1, introduced in
+                    2016, has been a source of pride for players, and therefore its core framework has remained almost
+                    unchanged. PoE 2 almost entirely adopted Atlas system from PoE 1.
+
+                    However, with the continuous updates to PoE 2, Atlas system from PoE 1 gradually became somewhat
+                    rigid, and many players began to find Atlas system in PoE 2 more enjoyable.
+
+                    PoE is also known for its highly customizable endgame gameplay. In this respect, the two games are
+                    PoE is also known for its highly customizable endgame gameplay. In this respect, the two games are
+                    PoE is also known for its highly customizable endgame gameplay. In this respect, the two games are
+                    PoE is also known for its highly customizable endgame gameplay. In this respect, the two games are
+                    PoE is also known for its highly customizable endgame gameplay. In this respect, the two games are
+                    PoE is also known for its highly customizable endgame gameplay. In this respect, the two games are
+                    In PoE 2, Atlas is a procedurally generated, infinitely explorable map where players can move from
+                    node to node on a huge map, searching for unique points of interest.
+
+                    This design breaks away from the fixed "repeatedly farming the same favorite map" pattern of PoE 1's
+                    endgame gameplay, replacing it with a continuous sense of exploration and variability.
+                </p>
+                <h3>33333</h3>
+                <p>
+                    Endgame System
+                    PoE is also known for its highly customizable endgame gameplay. In this respect, the two games are
+                    very similar and often borrow from each other.
+
+                    PoE is also known for its highly customizable endgame gameplay. In this respect, the two games are
+                    PoE is also known for its highly customizable endgame gameplay. In this respect, the two games are
+                    PoE is also known for its highly customizable endgame gameplay. In this respect, the two games are
+                    PoE is also known for its highly customizable endgame gameplay. In this respect, the two games are
+                    PoE is also known for its highly customizable endgame gameplay. In this respect, the two games are
+                    PoE is also known for its highly customizable endgame gameplay. In this respect, the two games are
+                    The game's endgame system is centered around Atlas system - Atlas system from PoE 1, introduced in
+                    2016, has been a source of pride for players, and therefore its core framework has remained almost
+                    unchanged. PoE 2 almost entirely adopted Atlas system from PoE 1.
+
+                    However, with the continuous updates to PoE 2, Atlas system from PoE 1 gradually became somewhat
+                    rigid, and many players began to find Atlas system in PoE 2 more enjoyable.
+
+                    In PoE 2, Atlas is a procedurally generated, infinitely explorable map where players can move from
+                    node to node on a huge map, searching for unique points of interest.
+
+                    This design breaks away from the fixed "repeatedly farming the same favorite map" pattern of PoE 1's
+                    endgame gameplay, replacing it with a continuous sense of exploration and variability.
+                </p>
+                <h3>44444</h3>
+                <p>
+                    Endgame System
+                    PoE is also known for its highly customizable endgame gameplay. In this respect, the two games are
+                    PoE is also known for its highly customizable endgame gameplay. In this respect, the two games are
+                    PoE is also known for its highly customizable endgame gameplay. In this respect, the two games are
+                    PoE is also known for its highly customizable endgame gameplay. In this respect, the two games are
+                    PoE is also known for its highly customizable endgame gameplay. In this respect, the two games are
+                    PoE is also known for its highly customizable endgame gameplay. In this respect, the two games are
+                    PoE is also known for its highly customizable endgame gameplay. In this respect, the two games are
+                    very similar and often borrow from each other.
+
+                    The game's endgame system is centered around Atlas system - Atlas system from PoE 1, introduced in
+                    2016, has been a source of pride for players, and therefore its core framework has remained almost
+                    unchanged. PoE 2 almost entirely adopted Atlas system from PoE 1.
+
+                    However, with the continuous updates to PoE 2, Atlas system from PoE 1 gradually became somewhat
+                    rigid, and many players began to find Atlas system in PoE 2 more enjoyable.
+
+                    In PoE 2, Atlas is a procedurally generated, infinitely explorable map where players can move from
+                    node to node on a huge map, searching for unique points of interest.
+
+                    This design breaks away from the fixed "repeatedly farming the same favorite map" pattern of PoE 1's
+                    endgame gameplay, replacing it with a continuous sense of exploration and variability.
+                </p>
+            </div>
+        </div>
+        <div class="right">
+            <div class="tp"></div>
+            <div class="topic">
+                <!-- <div class="p-1">item 1</div>
+                <div class="p-2 active-item">- item 2</div> -->
+            </div>
+        </div>
+    </div>
+    <script>
+        const topics = [];
+        // $("#app").find('h2,h3').each(function (index, item) {
+        //     let nodeTag = item.tagName.toLowerCase();
+        //     $(this).attr('data-id', 'topic' + index)
+        //     const topic = {
+        //         id: 'topic' + index,
+        //         title: $(this).text(),
+        //         type: nodeTag,
+        //         children: []
+        //     }
+        //     topics.push(topic)
+        // })
+        const arr = []
+        // function dfs(list) {
+        //     let nodes = [...list]
+        //     while (nodes.length) {
+        //         let node = nodes.shift()
+        //         if (node.type === 'h2') {
+        //             arr.push(node)
+        //         } else {
+        //             let pre = arr[arr.length - 1]
+        //             if (pre && pre.type === 'h2') {
+        //                 if (pre.children) {
+        //                     pre.children.push(node)
+        //                 } else {
+        //                     pre.children = [node]
+        //                 }
+        //             } else {
+        //                 arr.push(node)
+        //             }
+        //         }
+        //     }
+        // }
+        // dfs(topics)
+        // if (arr.length > 0) {
+        //     let html = ''
+        //     arr.forEach(item => {
+        //         html += `<div class="topic-item" data-id="${item.id}">${item.title}</div>`
+        //         if (item.children) {
+        //             html += item.children.map(child => {
+        //                 return `<div class="topic-item p-2" data-id="${child.id}">- ${child.title}</div>`
+        //             }).join('')
+        //         }
+        //     })
+        //     $('.topic').html(html).html(html)
+        // }
+        // $('.topic').on('click', '.topic-item', function () {
+        //     $(this).siblings().removeClass('active-item')
+        //     $(this).toggleClass('active-item')
+        //     let id = $(this).data('id')
+        //     if ($('.content') && $('.content').length > 0) {
+        //         const target = $('.content').find(`[data-id="${id}"]`)
+        //         if (target.length > 0) {
+        //             $('html,body').animate({
+        //                 scrollTop: target.offset().top
+        //             }, 500)
+        //         }
+        //     }
+        // })
+        // // 监听滚动
+        // let activeTopicId = ''
+        // $(window).scroll(function () {
+        //     let scrollTop = $(window).scrollTop()
+        //     $('.content h2,h3').each(function (index, item) {
+        //         let offset = $(this).offset().top
+        //         if (scrollTop >= offset) {
+        //             $('.topic .topic-item').removeClass('active-item')
+        //             $(this).addClass('active-item')
+        //             activeTopicId = $(this).data('id')
+        //         }
+        //     })
+        // })
+        // $(window).scroll(function () {
+        //     let scrollTop = $(window).scrollTop()
+        //     $('.content h2,h3').each(function (index, item) {
+        //         let offset = $(this).offset().top
+        //         if (scrollTop >= offset) {
+        //             $('.topic .topic-item').removeClass('active-item')
+        //             $(this).addClass('active-item') // ❗ 这里给【正文标题】加active，不是目录！
+        //             activeTopicId = $(this).data('id')
+        //         }
+        //     })
+        // })
+        const HEADER_OFFSET = 84;
+        const $content = $('.content');
+        const $topicWrap = $('.topic');
+
+        // 采集h2/h3，挂载data-id
+        $("#app").find('h2,h3').each(function (index, item) {
+            let nodeTag = item.tagName.toLowerCase();
+            const id = 'topic' + index;
+            $(this).attr('data-id', id);
+            const topic = {
+                id: id,
+                title: $(this).text().trim(),
+                type: nodeTag,
+                children: []
+            }
+            topics.push(topic)
+        });
+
+        // 改名，不再叫dfs（只是顺序分组，不是深度优先）
+        function buildTree(list) {
+            let nodes = [...list]
+            while (nodes.length) {
+                let node = nodes.shift()
+                if (node.type === 'h2') {
+                    arr.push(node)
+                } else {
+                    let pre = arr[arr.length - 1]
+                    if (pre && pre.type === 'h2') {
+                        pre.children = pre.children || [];
+                        pre.children.push(node)
+                    } else {
+                        arr.push(node)
+                    }
+                }
+            }
+        }
+        buildTree(topics);
+
+        // 渲染目录
+        if (arr.length > 0) {
+            let html = ''
+            arr.forEach(item => {
+                html += `<div class="topic-item" data-id="${item.id}">${item.title}</div>`
+                if (item.children) {
+                    html += item.children.map(child => {
+                        return `<div class="topic-item p-2" data-id="${child.id}">- ${child.title}</div>`
+                    }).join('')
+                }
+            })
+            $topicWrap.html(html);
+        }
+        let tocLocked = false;
+        let clickTimer = null;
+        $topicWrap.on('click', '.topic-item', function (e) {
+            e.preventDefault();
+            const $thisItem = $(this);
+            const id = $thisItem.data('id');
+            const $target = $content.find(`[data-id="${id}"]`);
+            if (!$target.length) return;
+            $topicWrap.find('.topic-item').removeClass('active-item');
+            $thisItem.addClass('active-item');
+            tocLocked = true;
+            const targetTop = $target.offset().top - HEADER_OFFSET;
+            $('html,body').animate({ scrollTop: targetTop }, 500);
+
+            clearTimeout(clickTimer);
+            clickTimer = setTimeout(() => {
+                tocLocked = false;
+                // updateActive(); 
+            }, 520)
+        })
+
+        // ========== 滚动高亮逻辑 ==========
+        let ticking = false;
+        function onScroll() {
+            if (tocLocked) return; // 锁定期间，完全不执行高亮更新
+            if (ticking) return;
+            ticking = true;
+            requestAnimationFrame(() => {
+                ticking = false;
+                updateActive();
+            })
+        }
+
+        function updateActive() {
+            const line = HEADER_OFFSET + 12;
+            let currentId = '';
+            const $headers = $content.find('h2,h3');
+            // 反向循环，从后向前找第一个在基准线上方的标题
+            for (let i = $headers.length - 1; i >= 0; i--) {
+                const el = $headers[i];
+                const r = el.getBoundingClientRect().top;
+                if (r <= line) {
+                    currentId = $(el).data('id');
+                    break;
+                }
+            }
+
+            // ✅ 修复：锁定状态（点击滚动动画中）不触发页面底部兜底！
+            if (!tocLocked && (window.innerHeight + window.pageYOffset >= document.documentElement.scrollHeight - 4)) {
+                const lastItem = topics[topics.length - 1];
+                currentId = lastItem.id;
+            }
+
+            $topicWrap.find('.topic-item').removeClass('active-item');
+            if (currentId) {
+                $topicWrap.find(`.topic-item[data-id="${currentId}"]`).addClass('active-item');
+            }
+        }
+
+        $(window).on('scroll', onScroll);
+        $(window).on('resize', () => {
+            tocLocked = false;
+            updateActive();
+        })
+        updateActive();
+    </script>
+</body>
+
+</html>

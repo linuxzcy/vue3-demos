@@ -1,0 +1,582 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>jQuery 轮播 · 中间压住两侧 · 三端适配</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        html,
+        body {
+            overflow-x: hidden;
+        }
+
+        body {
+            min-height: 100vh;
+            background: #0f1118;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+        }
+
+        /* 父元素：满宽，两侧卡片的外沿就顶在它的左右边界上 */
+        .carousel {
+            position: relative;
+            width: 100%;
+            overflow: hidden;
+        }
+
+        /* 舞台：卡片绝对定位的参考系，超出部分靠它裁掉 */
+        .stage {
+            position: relative;
+            width: 100%;
+            overflow: hidden;
+            touch-action: pan-y;
+            cursor: grab;
+        }
+
+        .stage.is-dragging {
+            cursor: grabbing;
+        }
+
+        /* ---------- 卡片 ---------- */
+        .slide {
+            position: absolute;
+            top: 50%;
+            left: 0;
+            border-radius: var(--radius, 24px);
+            background-color: #1b1f2a;
+            background-size: cover;
+            background-position: center;
+            background-repeat: no-repeat;
+            overflow: hidden;
+            box-shadow: 0 16px 44px rgba(0, 0, 0, .55);
+            transform-origin: center center;
+            backface-visibility: hidden;
+            will-change: transform, width, height;
+            transition:
+                transform .55s cubic-bezier(.22, .61, .36, 1),
+                width .55s cubic-bezier(.22, .61, .36, 1),
+                height .55s cubic-bezier(.22, .61, .36, 1),
+                opacity .4s ease,
+                box-shadow .4s ease;
+        }
+
+        /* 拖拽中关掉过渡，卡片要跟手 */
+        .stage.is-dragging .slide {
+            transition: none !important;
+        }
+
+        .slide.is-active {
+            box-shadow: 0 26px 68px rgba(0, 0, 0, .72);
+        }
+
+        .slide-mask {
+            position: absolute;
+            inset: 0;
+            border-radius: inherit;
+            background: linear-gradient(to top, rgba(0, 0, 0, .8) 0%, rgba(0, 0, 0, .2) 42%, transparent 68%);
+            display: flex;
+            flex-direction: column;
+            justify-content: flex-end;
+            padding: var(--pad, 20px) var(--pad, 20px) var(--pad-b, 20px);
+            color: #fff;
+        }
+
+        .slide-title {
+            font-size: var(--title, 18px);
+            font-weight: 600;
+            margin-bottom: 4px;
+        }
+
+        .slide-desc {
+            font-size: var(--desc, 13px);
+            opacity: .78;
+        }
+
+        /* 右侧卡片的可见区在它右半边，文字跟着靠右，否则会被中间卡片压住 */
+        .slide.is-right .slide-mask {
+            align-items: flex-end;
+            text-align: right;
+        }
+
+        /* 非当前卡片的文字淡一点，视觉重心留给中间那张 */
+        .slide:not(.is-active) .slide-mask {
+            opacity: .62;
+        }
+
+        /* 移动端侧卡只露一条缝，文字会被切得很难看，干脆不显示 */
+        .carousel.hide-side-text .slide:not(.is-active) .slide-mask {
+            opacity: 0;
+        }
+
+        /* ---------- 分页点 ---------- */
+        .dots {
+            position: absolute;
+            left: 0;
+            right: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: var(--dot-gap, 8px);
+            z-index: 30;
+            pointer-events: none;
+        }
+
+        .dot {
+            position: relative;
+            display: block;
+            width: var(--dot-w, 40px);
+            height: var(--dot-h, 5px);
+            padding: 0;
+            border: 0;
+            border-radius: 999px;
+            background: rgba(255, 255, 255, .22);
+            overflow: hidden;
+            cursor: pointer;
+            pointer-events: auto;
+            -webkit-tap-highlight-color: transparent;
+            transition: width .3s ease, background .3s ease;
+        }
+
+        .dot-fill {
+            display: block;
+            width: 0;
+            height: 100%;
+            border-radius: inherit;
+            background: #fff;
+        }
+
+        /* 移动端：圆点样式，激活的那颗变长 */
+        .dots.is-pill .dot {
+            background: rgba(255, 255, 255, .38);
+        }
+
+        .dots.is-pill .dot.is-active {
+            width: var(--dot-active-w, 26px);
+            background: rgba(255, 255, 255, .28);
+        }
+
+        /* 移动端：分页点压在卡片上，需要一点投影才看得清 */
+        .dots.is-pill {
+            filter: drop-shadow(0 1px 3px rgba(0, 0, 0, .5));
+        }
+    </style>
+</head>
+
+<body>
+    <div class="carousel" id="carousel">
+        <div class="stage" id="stage">
+            <div class="dots" id="dots"></div>
+        </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.7.1/jquery.min.js"></script>
+    <script>
+        (function ($) {
+            'use strict';
+
+            /* =========================================================
+               一、数据
+               ========================================================= */
+            var SLIDES = [
+                { img: 'https://picsum.photos/seed/jq01/1200/700', title: 'Image 1', desc: 'Random photo' },
+                { img: 'https://picsum.photos/seed/jq02/1200/700', title: 'Image 2', desc: 'Random photo' },
+                { img: 'https://picsum.photos/seed/jq03/1200/700', title: 'Image 3', desc: 'Random photo' },
+                { img: 'https://picsum.photos/seed/jq04/1200/700', title: 'Image 4', desc: 'Random photo' },
+                { img: 'https://picsum.photos/seed/jq05/1200/700', title: 'Image 5', desc: 'Random photo' },
+                { img: 'https://picsum.photos/seed/jq06/1200/700', title: 'Image 6', desc: 'Random photo' },
+                { img: 'https://picsum.photos/seed/jq07/1200/700', title: 'Image 7', desc: 'Random photo' },
+                { img: 'https://picsum.photos/seed/jq08/1200/700', title: 'Image 8', desc: 'Random photo' }
+            ];
+
+            /* =========================================================
+               二、配置：三端各一套，改这里就行
+
+                 centerWidth   当前卡片宽度。0~1 = 占父元素宽度的比例；也可写 '520px'
+                 centerHeight  当前卡片高度(px)。0 = 按 aspect 自动算
+                 aspect        宽高比，centerHeight 为 0 时生效（620/360 ≈ 1.72）
+
+                 sideScale     两侧卡片相对当前卡片的缩放
+                                 1   = 平铺，和当前卡片一样大（移动端）
+                                 0.8 = 两侧缩小，有层次（PC）
+
+                 sideOffset    两侧卡片外沿距父元素边缘的距离 ← 「侧卡位置」的旋钮
+                                 0   = 外沿正好顶到父元素边缘（默认）
+                                 > 0 = 侧卡整体往中间收，边缘留缝
+                                 < 0 = 侧卡往外溢，外沿被父元素裁掉
+
+                 stageExtra    舞台比卡片高出的部分（给阴影、给分页点留位置）
+                 dots.mode     'progress' 进度条  |  'pill' 圆点（激活变长）
+                 dots.bottom   分页点距舞台底部的距离
+               ========================================================= */
+            var CONFIG = {
+                // 移动端：平铺、满宽、分页点压在卡片上
+                mobile: {
+                    max: 767,
+                    centerWidth: 0.72,
+                    centerHeight: 0,
+                    aspect: 3 / 4,
+                    sideScale: 1,
+                    sideOffset: 0,
+                    radius: 16,
+                    pad: 14,
+                    padBottom: 34,      // 给压在卡片上的分页点让位，否则文字会跟点叠在一起
+                    sideText: false,    // 侧卡只露一条缝，文字会被切，不显示
+                    title: 15,
+                    desc: 12,
+                    stageExtra: 0,
+                    dots: { mode: 'pill', bottom: 14, gap: 5, w: 6, h: 4, activeW: 26 }
+                },
+                // iPad：两侧开始缩小，分页点移到卡片下方
+                tablet: {
+                    max: 1023,
+                    centerWidth: 0.6,
+                    centerHeight: 0,
+                    aspect: 620 / 360,
+                    sideScale: 0.86,
+                    sideOffset: 0,
+                    radius: 22,
+                    pad: 18,
+                    padBottom: 18,
+                    sideText: true,
+                    title: 17,
+                    desc: 13,
+                    stageExtra: 72,
+                    dots: { mode: 'progress', bottom: 22, gap: 6, w: 30, h: 4, activeW: 30 }
+                },
+                // PC：层次最明显，分页点是进度条
+                desktop: {
+                    max: Infinity,
+                    centerWidth: 0.72,
+                    centerHeight: 0,
+                    aspect: 620 / 360,
+                    sideScale: 0.8,
+                    sideOffset: 0,
+                    radius: 28,
+                    pad: 26,
+                    padBottom: 26,
+                    sideText: true,
+                    title: 20,
+                    desc: 14,
+                    stageExtra: 92,
+                    dots: { mode: 'progress', bottom: 26, gap: 8, w: 42, h: 5, activeW: 42 }
+                }
+            };
+
+            var AUTOPLAY = 15000;   // 每张停留时长(ms)
+            var DRAG_RATIO = 0.16; // 拖过父元素宽度的这个比例就翻页
+
+            /* =========================================================
+               三、状态
+               ========================================================= */
+            var $carousel = $('#carousel');
+            var $stage = $('#stage');
+            var $dots = $('#dots');
+            var $slides = $();
+
+            var cfg;                 // 当前生效的那套配置
+            var C = 0;               // 父元素宽度
+            var cw = 0, ch = 0;      // 当前卡片宽 / 高
+            var sw = 0, sh = 0;      // 两侧卡片宽 / 高
+
+            var pos = 0;             // 连续位置。整数 = 某张卡居中，小数 = 拖拽中
+            var paused = false;      // 拖拽时暂停自动播放与进度
+            var progStart = 0;       // 当前这张的开始时间，用来算进度
+            var rafId = null;
+
+            var dragging = false, startX = 0, startY = 0, startPos = 0, moved = false;
+            var stageLeft = 0, stageTop = 0;
+
+            /* =========================================================
+               四、测量与配置
+               ========================================================= */
+            function pickConfig() {
+                var w = window.innerWidth;
+                if (w <= CONFIG.mobile.max) return CONFIG.mobile;
+                if (w <= CONFIG.tablet.max) return CONFIG.tablet;
+                return CONFIG.desktop;
+            }
+
+            function measure() {
+                cfg = pickConfig();
+                C = $stage.width();
+                cw = (typeof cfg.centerWidth === 'string')
+                    ? parseFloat(cfg.centerWidth)
+                    : C * cfg.centerWidth;
+                ch = cfg.centerHeight > 0 ? cfg.centerHeight : cw / cfg.aspect;
+                sw = cw * cfg.sideScale;
+                sh = ch * cfg.sideScale;
+            }
+
+            function applyConfig() {
+                $stage.css('height', (ch + cfg.stageExtra) + 'px');
+                $carousel
+                    .toggleClass('hide-side-text', cfg.sideText === false)
+                    .css({
+                        '--radius': cfg.radius + 'px',
+                        '--pad': cfg.pad + 'px',
+                        '--pad-b': cfg.padBottom + 'px',
+                        '--title': cfg.title + 'px',
+                        '--desc': cfg.desc + 'px'
+                    });
+                $dots
+                    .css({
+                        bottom: cfg.dots.bottom + 'px',
+                        '--dot-gap': cfg.dots.gap + 'px',
+                        '--dot-w': cfg.dots.w + 'px',
+                        '--dot-h': cfg.dots.h + 'px',
+                        '--dot-active-w': cfg.dots.activeW + 'px'
+                    })
+                    .toggleClass('is-pill', cfg.dots.mode === 'pill');
+            }
+
+            /* =========================================================
+               五、几何：o 是「离当前卡片的偏移」，可以是小数
+                  o = 0     → 居中，原尺寸，z 最高
+                  |o| = 1   → 侧卡，缩小，外沿顶到父元素边缘
+                  |o| >= 2  → 再往外淡出
+
+                  关键：在 0 → 1 之间做线性插值，所以拖拽时是连续动画，
+                  不会出现「松手瞬间跳一下」。
+               ========================================================= */
+            function layoutAt(o) {
+                var d = Math.abs(o);
+                var sign = o >= 0 ? 1 : -1;
+                var sideCX = sign > 0
+                    ? C - cfg.sideOffset - sw / 2
+                    : cfg.sideOffset + sw / 2;
+
+                if (d <= 1) {
+                    var t = d;
+                    return {
+                        w: cw + (sw - cw) * t,
+                        h: ch + (sh - ch) * t,
+                        cx: (C / 2) + (sideCX - C / 2) * t,
+                        opacity: 1
+                    };
+                }
+
+                // 再外一层：只往外挪一点并淡出，进场更自然
+                var t2 = Math.min(d - 1, 1);
+                var farCX = sideCX + sign * 60;
+                return {
+                    w: sw,
+                    h: sh,
+                    cx: sideCX + (farCX - sideCX) * t2,
+                    opacity: 1 - t2
+                };
+            }
+
+            function render() {
+                var n = SLIDES.length;
+                $slides.each(function (i) {
+                    var o = i - pos;
+                    o = ((o % n) + n) % n;      // 归一到 0 ~ n-1
+                    if (o > n / 2) o -= n;      // 再归一到 -n/2 ~ n/2，保证走最短路径
+
+                    var L = layoutAt(o);
+                    this.style.width = L.w + 'px';
+                    this.style.height = L.h + 'px';
+                    this.style.transform = 'translate3d(' + (L.cx - L.w / 2) + 'px, -50%, 0)';
+                    this.style.opacity = L.opacity;
+                    this.style.zIndex = Math.abs(o) < 0.5 ? 3 : 2;
+                    // 淡出的卡片会盖在可见卡片上面（z 相同，DOM 靠后的在上），
+                    // 必须关掉它的点击，否则点右侧卡片会点到看不见的那张
+                    this.style.pointerEvents = Math.abs(o) <= 1.05 ? 'auto' : 'none';
+
+                    var $el = $(this);
+                    $el.toggleClass('is-active', Math.abs(o) < 0.5)
+                        .toggleClass('is-right', o > 0.35);
+                });
+            }
+
+            /* =========================================================
+               六、分页点
+               ========================================================= */
+            function buildDots() {
+                $dots.empty();
+                $.each(SLIDES, function (i) {
+                    $('<button type="button" class="dot"><span class="dot-fill"></span></button>')
+                        .attr('aria-label', '第 ' + (i + 1) + ' 张')
+                        .appendTo($dots)
+                        .on('click', function () { goTo(i); });
+                });
+            }
+
+            function realIndex() {
+                var n = SLIDES.length;
+                return ((Math.round(pos) % n) + n) % n;
+            }
+
+            function updateDots() {
+                var real = realIndex();
+                $dots.children('.dot').each(function (i) {
+                    $(this).toggleClass('is-active', i === real);
+                });
+                // 进度条归零，由 rAF 重新填
+                $dots.children('.dot').find('.dot-fill').css('width', '0%');
+                progStart = performance.now();
+            }
+
+            /* =========================================================
+               七、切页
+               ========================================================= */
+            // 把目标索引换成离当前位置最近的等价位置（loop 时不会绕远路）
+            function nearestPos(target) {
+                var n = SLIDES.length;
+                var d = target - pos;
+                d = ((d % n) + n) % n;
+                if (d > n / 2) d -= n;
+                return pos + d;
+            }
+
+            function goTo(target) {
+                pos = nearestPos(target);
+                render();
+                updateDots();
+            }
+
+            function next() { goTo(Math.round(pos) + 1); }
+            function prev() { goTo(Math.round(pos) - 1); }
+
+            /* =========================================================
+               八、自动播放 + 进度条
+               ========================================================= */
+            function tick(now) {
+                if (!paused && !dragging) {
+                    var pct = (now - progStart) / AUTOPLAY;
+                    if (pct >= 1) {
+                        next();
+                    } else {
+                        $dots.children('.dot').eq(realIndex())
+                            .find('.dot-fill').css('width', (pct * 100) + '%');
+                    }
+                }
+                rafId = requestAnimationFrame(tick);
+            }
+
+            /* =========================================================
+               九、拖拽（Pointer Events，鼠标/触摸一套逻辑）
+               ========================================================= */
+            function pointerPos(e) {
+                var oe = e.originalEvent;
+                var t = (oe && oe.touches && oe.touches.length) ? oe.touches[0]
+                    : (oe && oe.changedTouches && oe.changedTouches.length) ? oe.changedTouches[0]
+                        : null;
+                return { x: t ? t.clientX : e.clientX, y: t ? t.clientY : e.clientY };
+            }
+
+            function onDown(e) {
+                if (e.button !== undefined && e.button !== 0) return;
+                dragging = true;
+                moved = false;
+                var sr = $stage[0].getBoundingClientRect();
+                stageLeft = sr.left;
+                stageTop = sr.top;
+                var p = pointerPos(e);
+                startX = p.x;
+                startY = p.y;
+                startPos = pos;
+                $stage.addClass('is-dragging');
+            }
+
+            function onMove(e) {
+                if (!dragging) return;
+                var dx = pointerPos(e).x - startX;
+                if (Math.abs(dx) > 4) moved = true;
+                // 手指往左 → 卡片往左走 → 下一张
+                pos = startPos - dx / (C * 0.9);
+                render();
+                if (e.cancelable) e.preventDefault();
+            }
+
+            function onUp() {
+                if (!dragging) return;
+                dragging = false;
+                $stage.removeClass('is-dragging');
+
+                var base = Math.round(pos);
+                var frac = pos - base;
+                var target = base;
+                if (Math.abs(frac) > DRAG_RATIO) target = base + (frac > 0 ? 1 : -1);
+
+                // 没拖动就是点击。按「点击落在哪一侧」判断翻页方向，
+                // 不用 e.target 判元素 —— 淡出的卡片叠在上面，会点到看不见的那张。
+                if (!moved) {
+                    var x = startX - stageLeft;
+                    var y = startY - stageTop;
+                    var cardTop = cfg.stageExtra / 2;
+                    var inBand = y >= cardTop - 12 && y <= cardTop + ch + 12;
+                    if (inBand) {
+                        if (x > C / 2 + cw / 2) { goTo(base + 1); return; }
+                        if (x < C / 2 - cw / 2) { goTo(base - 1); return; }
+                    }
+                }
+                goTo(target);
+            }
+
+            /* =========================================================
+               十、初始化
+               ========================================================= */
+            function buildSlides() {
+                $stage.children('.slide').remove();
+                $.each(SLIDES, function (i, item) {
+                    var $el = $('<div class="slide"></div>')
+                        .css('background-image', 'url("' + item.img + '")')
+                        .html(
+                            '<div class="slide-mask">' +
+                            '<div class="slide-title">' + item.title + '</div>' +
+                            '<div class="slide-desc">' + item.desc + '</div>' +
+                            '</div>'
+                        );
+                    // 必须 append：DOM 顺序要跟 SLIDES 一致，否则 realIndex 和点按跳转会错位
+                    $stage.append($el);
+                });
+                $slides = $stage.children('.slide');
+            }
+
+            function refresh() {
+                measure();
+                applyConfig();
+                pos = Math.round(pos);
+                render();
+                updateDots();
+            }
+
+            $(function () {
+                buildSlides();
+                buildDots();
+                refresh();
+
+                $stage.on('pointerdown', onDown);
+                $(document).on('pointermove', onMove);
+                $(document).on('pointerup pointercancel', onUp);
+
+                // 切到后台就暂停，回来重新计时
+                $(document).on('visibilitychange', function () {
+                    paused = document.hidden;
+                    if (!paused) progStart = performance.now();
+                });
+
+                var rt;
+                $(window).on('resize orientationchange', function () {
+                    clearTimeout(rt);
+                    rt = setTimeout(refresh, 120);
+                });
+
+                rafId = requestAnimationFrame(tick);
+            });
+
+        })(jQuery);
+    </script>
+</body>
+
+</html>

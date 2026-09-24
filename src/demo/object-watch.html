@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8" />
+    <title>JS 监听对象属性变化</title>
+    <style>
+        body {
+            font-family: system-ui, sans-serif;
+            max-width: 760px;
+            margin: 40px auto;
+            padding: 0 16px;
+        }
+
+        #log {
+            background: #0d1117;
+            color: #7ee787;
+            font-family: Consolas, monospace;
+            font-size: 13px;
+            padding: 12px;
+            border-radius: 8px;
+            min-height: 220px;
+            white-space: pre-wrap;
+        }
+
+        button {
+            margin: 8px 8px 0 0;
+            padding: 8px 14px;
+            cursor: pointer;
+        }
+
+        h2 {
+            margin-top: 28px;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>JS 监听对象属性变化（Proxy 实现）</h1>
+    <div>
+        <button onclick="demo.setNested()">修改嵌套属性 user.name</button>
+        <button onclick="demo.arrPush()">数组 arr 新增一项</button>
+        <button onclick="demo.addNewProp()">新增属性 age（has 变化）</button>
+        <button onclick="demo.delProp()">删除属性 name（deleteProperty）</button>
+        <button onclick="demo.readOnly()">只读取属性（不触发）</button>
+        <button onclick="clearLog()">清空日志</button>
+    </div>
+    <h2>变化日志</h2>
+    <div id="log"></div>
+
+    <script>
+        /**
+         * 监听对象属性变化
+         * @param {object} target   被监听的对象
+         * @param {function} callback 变化回调 (path, newValue, oldValue, type)
+         * @param {string} basePath 内部递归用的路径前缀
+         */
+        function watchObject(target, callback, basePath = '') {
+            // 缓存代理，避免同一个对象重复包装；也防止循环引用导致无限递归
+            const proxyMap = new WeakMap()
+
+            function observe(obj, prefix) {
+                if (obj === null || typeof obj !== 'object') return obj
+                if (proxyMap.has(obj)) return proxyMap.get(obj)
+
+                const proxy = new Proxy(obj, {
+                    get(obj, key, receiver) {
+                        const value = Reflect.get(obj, key, receiver)
+                        // 读取嵌套对象时，返回嵌套对象的代理（惰性深层监听）
+                        if (value !== null && typeof value === 'object') {
+                            const path = prefix ? `${prefix}.${String(key)}` : String(key)
+                            const child = observe(value, path)
+                            proxyMap.set(value, child)
+                            return child
+                        }
+                        return value
+                    },
+                    set(obj, key, value, receiver) {
+                        const oldValue = obj[key]
+                        const result = Reflect.set(obj, key, value, receiver)
+                        // 值真正变化时才通知（排除 Symbol 等内部键）
+                        if (typeof key !== 'symbol' && !Object.is(oldValue, value)) {
+                            const path = prefix ? `${prefix}.${String(key)}` : String(key)
+                            callback(path, value, oldValue, 'set')
+                        }
+                        return result
+                    },
+                    deleteProperty(obj, key) {
+                        const had = Object.prototype.hasOwnProperty.call(obj, key)
+                        const oldValue = obj[key]
+                        const result = Reflect.deleteProperty(obj, key)
+                        if (had && typeof key !== 'symbol') {
+                            const path = prefix ? `${prefix}.${String(key)}` : String(key)
+                            callback(path, undefined, oldValue, 'delete')
+                        }
+                        return result
+                    },
+                    has(obj, key) {
+                        const before = key in obj
+                        const result = Reflect.has(obj, key)
+                        if (!before && result && typeof key !== 'symbol') {
+                            const path = prefix ? `${prefix}.${String(key)}` : String(key)
+                            callback(path, obj[key], undefined, 'has-add')
+                        }
+                        return result
+                    }
+                })
+
+                proxyMap.set(obj, proxy)
+                return proxy
+            }
+
+            return observe(target, basePath)
+        }
+
+        // ---------- 使用示例 ----------
+        const raw = {
+            name: '张三',
+            age: undefined,
+            user: { name: '李四', address: { city: '北京' } },
+            arr: [1, 2, 3],
+        }
+
+        function log(msg) {
+            const el = document.getElementById('log')
+            el.textContent += msg + '\n'
+            el.scrollTop = el.scrollHeight
+        }
+        function clearLog() { document.getElementById('log').textContent = '' }
+
+        // 支持路径通配：'user.*' 匹配 user 下的一级属性
+        function matchPath(pattern, path) {
+            const re = new RegExp('^' + pattern.replace(/\./g, '\\.').replace(/\*/g, '[^.]+') + '$')
+            return re.test(path)
+        }
+
+        const state = watchObject(raw, (path, newVal, oldVal, type) => {
+            log(`[${type}] ${path}: ${JSON.stringify(oldVal)} -> ${JSON.stringify(newVal)}`)
+        })
+
+        const demo = {
+            setNested() {
+                state.user.name = '王五'                 // 触发 set user.name
+                state.user.address.city = '上海'         // 触发 set user.address.city
+            },
+            arrPush() {
+                state.arr.push(Date.now() % 100)         // 数组 push 本质也是 set（下标 + length）
+            },
+            addNewProp() {
+                state.age = 18                           // 触发 set age
+                log('--- 读取 "age" in state 验证 has 陷阱 ---')
+                log(String('nickname' in state))         // 读 nickname 会走 has 陷阱
+                state.nickname                            // 触发 set nickname（新增属性）
+            },
+            delProp() {
+                delete state.user.name                    // 触发 deleteProperty user.name
+            },
+            readOnly() {
+                log(`读取 state.name = ${state.name}（读操作不会触发变化回调）`)
+            },
+        }
+    </script>
+</body>
+
+</html>

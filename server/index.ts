@@ -1,176 +1,195 @@
-import express from 'express'
-import cors from 'cors'
-import { createServer } from 'http'
-import { WebSocketServer, WebSocket } from 'ws'
-import { randomUUID } from 'crypto'
-import { createChunkUploadRouter } from './chunkUpload'
+import express from "express";
+import cors from "cors";
+import { createServer } from "http";
+import { WebSocketServer, WebSocket } from "ws";
+import { randomUUID } from "crypto";
+import { createChunkUploadRouter } from "./chunkUpload";
+import { createOAuthRouter } from "./oauth";
 
-const app = express()
-const server = createServer(app)
-const wss = new WebSocketServer({ server, path: '/ws' })
+const app = express();
+const server = createServer(app);
+const wss = new WebSocketServer({ server, path: "/ws" });
 
-app.use(cors())
-app.use(express.json({ limit: '20mb' }))
-app.use('/uploads', express.static('uploads'))
-app.use('/api/chunk', createChunkUploadRouter())
+app.use(cors());
+app.use(express.json({ limit: "20mb" }));
+app.use("/uploads", express.static("uploads"));
+app.use("/api/chunk", createChunkUploadRouter());
+app.use("/api/oauth", createOAuthRouter());
 
 // ─── 内存存储 ───────────────────────────────────────────────
 interface ClientMeta {
-  id: string
-  name: string
-  room: string
-  ws: WebSocket
-  lastPing: number
+  id: string;
+  name: string;
+  room: string;
+  ws: WebSocket;
+  lastPing: number;
 }
 
-const clients = new Map<WebSocket, ClientMeta>()
-const rooms = new Map<string, Set<WebSocket>>()
+const clients = new Map<WebSocket, ClientMeta>();
+const rooms = new Map<string, Set<WebSocket>>();
 
 // ─── 工具函数 ───────────────────────────────────────────────
 function broadcast(room: string, payload: object, exclude?: WebSocket) {
-  const set = rooms.get(room)
-  if (!set) return
-  const msg = JSON.stringify(payload)
+  const set = rooms.get(room);
+  if (!set) return;
+  const msg = JSON.stringify(payload);
   for (const ws of set) {
-    if (ws !== exclude && ws.readyState === WebSocket.OPEN) ws.send(msg)
+    if (ws !== exclude && ws.readyState === WebSocket.OPEN) ws.send(msg);
   }
 }
 
 function getOnlineUsers(room: string) {
-  const set = rooms.get(room)
-  if (!set) return []
+  const set = rooms.get(room);
+  if (!set) return [];
   return [...set]
     .map((ws) => clients.get(ws))
     .filter(Boolean)
-    .map((c) => ({ id: c!.id, name: c!.name }))
+    .map((c) => ({ id: c!.id, name: c!.name }));
 }
 
 function send(ws: WebSocket, type: string, data: unknown = {}) {
   if (ws.readyState === WebSocket.OPEN) {
-    ws.send(JSON.stringify({ type, data, ts: Date.now() }))
+    ws.send(JSON.stringify({ type, data, ts: Date.now() }));
   }
 }
 
 // ─── WebSocket ───────────────────────────────────────────────
-wss.on('connection', (ws) => {
-  send(ws, 'connected', { message: 'WebSocket 连接成功，请发送 join 加入房间' })
+wss.on("connection", (ws) => {
+  send(ws, "connected", {
+    message: "WebSocket 连接成功，请发送 join 加入房间",
+  });
 
-  ws.on('message', (raw) => {
-    let msg: { type: string; data?: Record<string, unknown> }
+  ws.on("message", (raw) => {
+    let msg: { type: string; data?: Record<string, unknown> };
     try {
-      msg = JSON.parse(raw.toString())
+      msg = JSON.parse(raw.toString());
     } catch {
-      send(ws, 'error', { message: '消息格式错误，需 JSON' })
-      return
+      send(ws, "error", { message: "消息格式错误，需 JSON" });
+      return;
     }
 
-    const { type, data = {} } = msg
+    const { type, data = {} } = msg;
 
     switch (type) {
-      case 'join': {
-        const name = String(data.name || '匿名用户')
-        const room = String(data.room || 'default')
-        const id = randomUUID().slice(0, 8)
+      case "join": {
+        const name = String(data.name || "匿名用户");
+        const room = String(data.room || "default");
+        const id = randomUUID().slice(0, 8);
 
         // 离开旧房间
-        const old = clients.get(ws)
+        const old = clients.get(ws);
         if (old) {
-          rooms.get(old.room)?.delete(ws)
-          broadcast(old.room, { type: 'user_left', data: { id: old.id, name: old.name } })
-          broadcast(old.room, { type: 'online_users', data: getOnlineUsers(old.room) })
+          rooms.get(old.room)?.delete(ws);
+          broadcast(old.room, {
+            type: "user_left",
+            data: { id: old.id, name: old.name },
+          });
+          broadcast(old.room, {
+            type: "online_users",
+            data: getOnlineUsers(old.room),
+          });
         }
 
-        clients.set(ws, { id, name, room, ws, lastPing: Date.now() })
-        if (!rooms.has(room)) rooms.set(room, new Set())
-        rooms.get(room)!.add(ws)
+        clients.set(ws, { id, name, room, ws, lastPing: Date.now() });
+        if (!rooms.has(room)) rooms.set(room, new Set());
+        rooms.get(room)!.add(ws);
 
-        send(ws, 'joined', { id, name, room })
-        broadcast(room, { type: 'user_joined', data: { id, name } }, ws)
-        broadcast(room, { type: 'online_users', data: getOnlineUsers(room) })
-        send(ws, 'system', { message: `欢迎 ${name} 加入房间「${room}」` })
-        break
+        send(ws, "joined", { id, name, room });
+        broadcast(room, { type: "user_joined", data: { id, name } }, ws);
+        broadcast(room, { type: "online_users", data: getOnlineUsers(room) });
+        send(ws, "system", { message: `欢迎 ${name} 加入房间「${room}」` });
+        break;
       }
 
-      case 'chat': {
-        const client = clients.get(ws)
+      case "chat": {
+        const client = clients.get(ws);
         if (!client) {
-          send(ws, 'error', { message: '请先 join 加入房间' })
-          return
+          send(ws, "error", { message: "请先 join 加入房间" });
+          return;
         }
         broadcast(client.room, {
-          type: 'chat',
+          type: "chat",
           data: {
             id: randomUUID().slice(0, 8),
             from: { id: client.id, name: client.name },
-            content: String(data.content || ''),
+            content: String(data.content || ""),
           },
-        })
-        break
+        });
+        break;
       }
 
-      case 'private': {
-        const client = clients.get(ws)
-        if (!client) return
-        const targetId = String(data.targetId || '')
-        const content = String(data.content || '')
+      case "private": {
+        const client = clients.get(ws);
+        if (!client) return;
+        const targetId = String(data.targetId || "");
+        const content = String(data.content || "");
         for (const [, c] of clients) {
           if (c.id === targetId && c.room === client.room) {
-            send(c.ws, 'private', {
+            send(c.ws, "private", {
               from: { id: client.id, name: client.name },
               content,
-            })
-            send(ws, 'private_sent', { to: targetId, content })
-            return
+            });
+            send(ws, "private_sent", { to: targetId, content });
+            return;
           }
         }
-        send(ws, 'error', { message: '目标用户不在线' })
-        break
+        send(ws, "error", { message: "目标用户不在线" });
+        break;
       }
 
-      case 'typing': {
-        const client = clients.get(ws)
-        if (!client) return
+      case "typing": {
+        const client = clients.get(ws);
+        if (!client) return;
         broadcast(
           client.room,
-          { type: 'typing', data: { id: client.id, name: client.name, typing: !!data.typing } },
+          {
+            type: "typing",
+            data: { id: client.id, name: client.name, typing: !!data.typing },
+          },
           ws,
-        )
-        break
+        );
+        break;
       }
 
-      case 'ping': {
-        const client = clients.get(ws)
-        if (client) client.lastPing = Date.now()
-        send(ws, 'pong', { serverTime: Date.now() })
-        break
+      case "ping": {
+        const client = clients.get(ws);
+        if (client) client.lastPing = Date.now();
+        send(ws, "pong", { serverTime: Date.now() });
+        break;
       }
 
       default:
-        send(ws, 'error', { message: `未知消息类型: ${type}` })
+        send(ws, "error", { message: `未知消息类型: ${type}` });
     }
-  })
+  });
 
-  ws.on('close', () => {
-    const client = clients.get(ws)
+  ws.on("close", () => {
+    const client = clients.get(ws);
     if (client) {
-      rooms.get(client.room)?.delete(ws)
-      broadcast(client.room, { type: 'user_left', data: { id: client.id, name: client.name } })
-      broadcast(client.room, { type: 'online_users', data: getOnlineUsers(client.room) })
-      clients.delete(ws)
+      rooms.get(client.room)?.delete(ws);
+      broadcast(client.room, {
+        type: "user_left",
+        data: { id: client.id, name: client.name },
+      });
+      broadcast(client.room, {
+        type: "online_users",
+        data: getOnlineUsers(client.room),
+      });
+      clients.delete(ws);
     }
-  })
-})
+  });
+});
 
 // 心跳检测：30s 无 ping 则断开
 setInterval(() => {
-  const now = Date.now()
+  const now = Date.now();
   for (const [ws, client] of clients) {
     if (now - client.lastPing > 60000) {
-      ws.terminate()
-      clients.delete(ws)
+      ws.terminate();
+      clients.delete(ws);
     }
   }
-}, 15000)
+}, 15000);
 
 // ─── SSE 流式输出 ────────────────────────────────────────────
 const sseDemoResponses: Record<string, string> = {
@@ -289,62 +308,62 @@ for event in sseclient.SSEClient(url):
 ## 5. 结论
 
 流式输出能显著降低 **首字延迟（TTFT）**，提升用户体验。`,
-}
+};
 
-app.get('/api/sse/stream', (req, res) => {
-  const topic = String(req.query.topic || 'mixed')
-  const content = sseDemoResponses[topic] ?? sseDemoResponses.mixed
+app.get("/api/sse/stream", (req, res) => {
+  const topic = String(req.query.topic || "mixed");
+  const content = sseDemoResponses[topic] ?? sseDemoResponses.mixed;
 
-  res.setHeader('Content-Type', 'text/event-stream')
-  res.setHeader('Cache-Control', 'no-cache')
-  res.setHeader('Connection', 'keep-alive')
-  res.flushHeaders()
+  res.setHeader("Content-Type", "text/event-stream");
+  res.setHeader("Cache-Control", "no-cache");
+  res.setHeader("Connection", "keep-alive");
+  res.flushHeaders();
 
-  let i = 0
-  const chunkSize = 3
+  let i = 0;
+  const chunkSize = 3;
   const interval = setInterval(() => {
     if (i >= content.length) {
-      res.write(`event: done\ndata: [DONE]\n\n`)
-      clearInterval(interval)
-      res.end()
-      return
+      res.write(`event: done\ndata: [DONE]\n\n`);
+      clearInterval(interval);
+      res.end();
+      return;
     }
-    const chunk = content.slice(i, i + chunkSize)
-    i += chunkSize
-    res.write(`data: ${JSON.stringify({ content: chunk })}\n\n`)
-  }, 40)
+    const chunk = content.slice(i, i + chunkSize);
+    i += chunkSize;
+    res.write(`data: ${JSON.stringify({ content: chunk })}\n\n`);
+  }, 40);
 
-  req.on('close', () => clearInterval(interval))
-})
+  req.on("close", () => clearInterval(interval));
+});
 
 // ─── 文件上传（TinyMCE / 通用） ─────────────────────────────
-app.post('/api/upload', (req, res) => {
-  const { file, filename } = req.body as { file?: string; filename?: string }
+app.post("/api/upload", (req, res) => {
+  const { file, filename } = req.body as { file?: string; filename?: string };
   if (!file) {
-    res.status(400).json({ error: '缺少 file 字段（base64）' })
-    return
+    res.status(400).json({ error: "缺少 file 字段（base64）" });
+    return;
   }
 
-  const match = file.match(/^data:([^;]+);base64,(.+)$/)
+  const match = file.match(/^data:([^;]+);base64,(.+)$/);
   if (!match) {
-    res.status(400).json({ error: 'file 需为 data URL base64 格式' })
-    return
+    res.status(400).json({ error: "file 需为 data URL base64 格式" });
+    return;
   }
 
-  const mime = match[1]
-  const ext = mime.split('/')[1]?.replace('jpeg', 'jpg') || 'bin'
-  const name = filename || `upload-${Date.now()}.${ext}`
-  const url = file // demo 直接返回 base64 URL，生产环境应存 OSS
+  const mime = match[1];
+  const ext = mime.split("/")[1]?.replace("jpeg", "jpg") || "bin";
+  const name = filename || `upload-${Date.now()}.${ext}`;
+  const url = file; // demo 直接返回 base64 URL，生产环境应存 OSS
 
-  res.json({ location: url, url, name, mime })
-})
+  res.json({ location: url, url, name, mime });
+});
 
-app.get('/api/health', (_req, res) => {
-  res.json({ ok: true, wsClients: clients.size, rooms: [...rooms.keys()] })
-})
+app.get("/api/health", (_req, res) => {
+  res.json({ ok: true, wsClients: clients.size, rooms: [...rooms.keys()] });
+});
 
-const PORT = 3001
+const PORT = 3001;
 server.listen(PORT, () => {
-  console.log(`Server running at http://localhost:${PORT}`)
-  console.log(`WebSocket: ws://localhost:${PORT}/ws`)
-})
+  console.log(`Server running at http://localhost:${PORT}`);
+  console.log(`WebSocket: ws://localhost:${PORT}/ws`);
+});

@@ -1,0 +1,358 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>UI Initiative Carousel 复刻 · 三张可见</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/swiper@8/swiper-bundle.min.css" />
+    <style>
+        /* ============================================================
+           结构：slidesPerView: 'auto' + CSS 宽度 = 视口 × --slide-f
+
+           当前卡片（中间那张）比两侧宽，再用 coverflow 的位移把左右两张
+           往中间收，中间那张就会「压住」两侧 —— 两侧只露出外沿一截。
+           露出的宽度 = (1 - f) / 2 × 容器宽，所以 f 越大压得越狠：
+
+             f = 0.3846 -> 三张刚好并排、贴住但互不重叠（临界值 = 1/(1+2s)）
+             f = 0.50   -> 中间占一半，左右各露 25%
+             f = 0.62   -> 左右各露 19%
+             f = 1.00   -> 中间卡铺满整屏，两侧完全被盖住（当前）
+
+           f 必须 > 1/(1+2s)（depth = 300 时 s = 0.8，即 f > 0.3846），
+           否则中间就压不到两侧。改 f 之后 stretch 会自动跟着重算（见下面 JS）。
+
+           侧边卡片的缩小由 coverflow 的 depth 决定：
+             scale = 1200 / (1200 + depth) = 1200 / (1200 + 300) = 0.8
+           注意第 n 张的 scale 是 1200 / (1200 + n × depth)，越往外缩得越狠。
+           这个比例只跟 depth 有关、跟卡片宽度无关，所以三端观感一致。
+
+           高度 / 字号 / 圆角 / 箭头 / dot 全部由 --slide-w 推导，
+           整套比例在三端等比缩放。
+           ============================================================ */
+        :root {
+            /* 卡片宽占视口的比例，决定中间压住两侧多少（见上方说明） */
+            --slide-f: 0.61;
+            /* --slide-w: calc(1200 * var(--slide-f)); */
+            --slide-w: 1200px * var(--slide-f);
+            /* 620 : 360 */
+            --slide-h: calc(var(--slide-w) * 0.5806);
+            --stage-h: calc(var(--slide-h) * 1.6);
+
+            /* 圆角：桌面端就是 40px；卡片很小的时候自动收窄，否则会变成胶囊形 */
+            --card-radius: min(40px, calc(var(--slide-h) * 0.2));
+
+            --mask-pad: clamp(8px, calc(var(--slide-w) * 0.0484), 30px);
+            --title-size: clamp(11px, calc(var(--slide-w) * 0.0387), 24px);
+            --title-mb: clamp(2px, calc(var(--slide-w) * 0.0129), 8px);
+            --desc-size: clamp(9px, calc(var(--slide-w) * 0.0226), 14px);
+            --arrow-size: clamp(24px, calc(var(--slide-w) * 0.0806), 50px);
+            --arrow-icon: clamp(12px, calc(var(--slide-w) * 0.0323), 20px);
+            --arrow-inset: clamp(6px, calc(var(--slide-w) * 0.0387), 24px);
+            --dot-w: clamp(14px, calc(var(--slide-w) * 0.0677), 42px);
+            --dot-gap: clamp(5px, calc(var(--slide-w) * 0.0226), 14px);
+            --page-gap: clamp(16px, calc(var(--slide-w) * 0.0645), 40px);
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        html,
+        body {
+            overflow-x: hidden;
+        }
+
+        body {
+            background: #0f1118;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+        }
+
+        /* 舞台：3 格刚好铺满整屏，不设 max-width、不留白 */
+        .carousel-wrap {
+            width: 100%;
+            margin: 0 auto;
+            overflow: hidden;
+        }
+
+        .swiper {
+            width: 100%;
+            height: var(--stage-h);
+            /* 必须 hidden：最外侧卡片正好顶到容器边，第 4 张就靠它挡住。
+               3D 透视在 .swiper 自己身上，不影响 coverflow */
+            overflow: hidden;
+        }
+
+        .swiper-wrapper {
+            align-items: center;
+        }
+
+        /* 当前卡片 + 左右两侧卡片，圆角一致 */
+        .swiper-slide {
+            /* 宽度 = 容器 × --slide-f。Swiper 用 slidesPerView: 'auto' 时会直接读这个宽度 */
+            width: calc(var(--slide-f) * 100%);
+            height: var(--slide-h);
+            border-radius: var(--card-radius);
+            background-size: cover;
+            background-position: center;
+            background-repeat: no-repeat;
+            box-shadow: 0 25px 70px rgba(0, 0, 0, 0.65);
+            overflow: hidden;
+            /* 3D 变换下让子元素独立成层，圆角裁剪更稳 */
+            /* isolation: isolate; */
+        }
+
+        /* coverflow 会往 slide 里注入 .swiper-slide-shadow-left / -right 遮罩，
+           不继承圆角的话四角会露直角 */
+        .swiper-slide-shadow-left,
+        .swiper-slide-shadow-right {
+            border-radius: inherit;
+        }
+
+        .slide-mask {
+            width: 100%;
+            height: 100%;
+            /* 再兜一层圆角：Safari 下父级 transform + overflow:hidden 有时裁不干净 */
+            border-radius: inherit;
+            background: linear-gradient(to top, rgba(0, 0, 0, 0.75) 0%, rgba(0, 0, 0, 0.15) 45%, transparent);
+            padding: var(--mask-pad);
+            display: flex;
+            flex-direction: column;
+            justify-content: flex-end;
+            color: #fff;
+        }
+
+        .slide-title {
+            font-size: var(--title-size);
+            font-weight: 600;
+            margin-bottom: var(--title-mb);
+        }
+
+        .slide-desc {
+            font-size: var(--desc-size);
+            opacity: 0.8;
+        }
+
+        /* 右侧那张卡片的内侧会被中间卡片压住，文字跟着挪到外侧，
+           否则只会露出半截（比如只剩个 "photo"） */
+       
+        /* 左右箭头 */
+        .swiper-button-prev,
+        .swiper-button-next {
+            top: 50%;
+            margin-top: calc(var(--arrow-size) / -2);
+            left: var(--arrow-inset);
+            right: var(--arrow-inset);
+            color: #fff;
+            width: var(--arrow-size);
+            height: var(--arrow-size);
+            border-radius: 50%;
+            background: rgba(255, 255, 255, 0.08);
+            backdrop-filter: blur(4px);
+            transition: 0.2s;
+        }
+
+        .swiper-button-next {
+            left: auto;
+        }
+
+        .swiper-button-prev {
+            right: auto;
+        }
+
+        .swiper-button-prev:hover,
+        .swiper-button-next:hover {
+            background: rgba(255, 255, 255, 0.18);
+        }
+
+        .swiper-button-prev:after,
+        .swiper-button-next:after {
+            font-size: var(--arrow-icon);
+        }
+
+        /* 自定义分页dot + 进度条 */
+        .custom-pagination {
+            display: flex;
+            flex-wrap: wrap;
+            gap: var(--dot-gap);
+            justify-content: center;
+            margin-top: var(--page-gap);
+            padding: 0 16px;
+        }
+
+        .dot-item {
+            width: var(--dot-w);
+            height: 4px;
+            background: rgba(255, 255, 255, 0.18);
+            border-radius: 4px;
+            overflow: hidden;
+        }
+
+        .dot-progress {
+            height: 100%;
+            width: 0;
+            background: #ffffff;
+            border-radius: 4px;
+            transition: none;
+        }
+
+        /* 小屏卡片太矮（<108px）时，居中摆放的箭头会压住底部的标题文字，
+           所以这里直接收起箭头 —— 滑动 + 分页点照常可用。
+           阈值换算：卡片高 = 卡片宽 × 0.5806，卡片宽 = (视口 - 2×留白) / 3 */
+        @media (max-width: 600px) {
+
+            .swiper-button-prev,
+            .swiper-button-next {
+                /* display: none; */
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <div class="carousel-wrap">
+        <div class="swiper mySwiper">
+            <div class="swiper-wrapper"></div>
+            <!-- 左右导航箭头 -->
+            <div class="swiper-button-prev"></div>
+            <div class="swiper-button-next"></div>
+        </div>
+        <!-- 自定义带进度的dot分页 -->
+        <div class="custom-pagination"></div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/swiper@8/swiper-bundle.min.js"></script>
+    <script>
+        const AUTOPLAY_DELAY = 1226000;
+
+        /* 想加多少张就往这个数组里加，幻灯片和分页 dot 都由它生成 */
+        const SLIDES = Array.from({ length: 10 }, (_, i) => ({
+            img: `https://picsum.photos/seed/carousel${i + 1}/1200/700`,
+            title: `Image ${i + 1}`,
+            desc: 'Random picsum photo',
+        }));
+
+        const swiperWrap = document.querySelector('.mySwiper .swiper-wrapper');
+        const paginationWrap = document.querySelector('.custom-pagination');
+
+        SLIDES.forEach((item) => {
+            const slide = document.createElement('div');
+            slide.className = 'swiper-slide';
+            slide.style.backgroundImage = `url('${item.img}')`;
+            slide.innerHTML = `
+      <div class="slide-mask">
+        <div class="slide-title">${item.title}</div>
+        <div class="slide-desc">${item.desc}</div>
+      </div>`;
+            swiperWrap.appendChild(slide);
+
+            paginationWrap.insertAdjacentHTML('beforeend', `
+      <div class="dot-item">
+        <div class="dot-progress"></div>
+      </div>`);
+        });
+
+        const progressDots = paginationWrap.querySelectorAll('.dot-progress');
+        let timer = null;
+
+        // 进度条计时
+        function startProgress(index) {
+            clearInterval(timer);
+            progressDots.forEach(dot => (dot.style.width = '0%'));
+            const currentDot = progressDots[index];
+            if (!currentDot) return;
+            const startTime = Date.now();
+            timer = setInterval(() => {
+                const pass = Date.now() - startTime;
+                let percent = (pass / AUTOPLAY_DELAY) * 100;
+                if (percent >= 100) {
+                    percent = 100;
+                    clearInterval(timer);
+                }
+                currentDot.style.width = `${percent}%`;
+            }, 30);
+        }
+
+        /* ============================================================
+           coverflow 三个参数的职责，别搞混：
+             · 卡片宽度 -> 由 CSS 的 --slide-f 决定（slidesPerView: 'auto'），stretch 管不着
+             · depth    -> 透视景深，决定左右两张缩小多少：scale = 1200 / (1200 + depth)
+             · stretch  -> 只做水平位移，沿 X 轴推/拉卡片，不改变宽度
+
+           这里要让侧边卡「外沿正好顶到容器边 + 内沿压到中间卡下面」：
+
+             侧边卡外沿 = (W - stretch) × s + W/2 × s = C/2      (W = f × C)
+             => stretch / W = 1.5 - 0.5 / (s × f)
+
+           f = 0.5 时 stretch = 25%；f = 1 时 stretch = 87.5%（当前）。
+           注意 stretch 取正才是「往中心拉」，
+           卡片才会被中间压住（取负是把卡片往外推，那是并排不重叠的做法）。
+           下面直接由 --slide-f 和 DEPTH 推导，改任一个都会自动跟着变。
+           ============================================================ */
+        const PERSPECTIVE = 1200;                // Swiper coverflow 固定透视
+        const DEPTH = 1000;                       // 侧边卡缩到 1200/(1200+300) = 80%
+        const SCALE = PERSPECTIVE / (PERSPECTIVE + DEPTH);
+
+        // 从 CSS 读卡片宽比例，保证只有一处定义
+        const SLIDE_F = parseFloat(
+            getComputedStyle(document.documentElement).getPropertyValue('--slide-f')
+        ) || 0.5;
+        const STRETCH = `${((1.5 - 0.5 / (SCALE * SLIDE_F)) * 100).toFixed(3)}%`;
+
+        const swiper = new Swiper(".mySwiper", {
+            loop: true,
+            effect: "coverflow",
+            grabCursor: true,
+            centeredSlides: true,
+
+            // 'auto' = 用 CSS 里的 .swiper-slide { width } 决定卡片宽度
+            slidesPerView: "auto",
+
+            spaceBetween: 0,
+
+            coverflowEffect: {
+                rotate: 0,
+                stretch: STRETCH,
+                depth: DEPTH,
+                modifier: 1,
+                slideShadows: true,
+            },
+
+            autoplay: {
+                delay: AUTOPLAY_DELAY,
+                disableOnInteraction: false,
+            },
+            navigation: {
+                nextEl: ".swiper-button-next",
+                prevEl: ".swiper-button-prev",
+            },
+
+            on: {
+                init: function (sw) {
+                    // 首屏也点亮进度条
+                    startProgress(sw.realIndex);
+                },
+                slideChange: function (sw) {
+                    console.log('当前真实索引 realIndex：', sw.realIndex);
+                    startProgress(sw.realIndex);
+                },
+                touchStart() {
+                    console.log('触摸开始，暂停计时');
+                    clearInterval(timer);
+                },
+                touchEnd(sw) {
+                    console.log('触摸结束，重启计时');
+                    // 拖拽结束后，重新触发slideChange逻辑恢复进度计时
+                    sw.emit('slideChange');
+                }
+            }
+        });
+    </script>
+</body>
+
+</html>

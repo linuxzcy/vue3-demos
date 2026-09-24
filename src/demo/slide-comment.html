@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <title>滑词添加评论（文本批注）Demo</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 860px; margin: 32px auto; padding: 0 16px; color: #24292f; }
+    #article { line-height: 1.9; font-size: 15px; border: 1px solid #d0d7de; border-radius: 8px; padding: 20px 24px; }
+    #article h3 { margin-top: 0; }
+
+    /* 批注高亮：上下两条彩色横线（仿 Word/Noted 波浪线），用 box-shadow 实现，
+       重叠批注天然叠加，避免嵌套 <mark> 被浏览器 DOM 修正拆坏 */
+    .anno { cursor: pointer; }
+
+    #toolbar {
+      position: fixed; display: none; z-index: 10;
+      background: #24292f; color: #fff; border-radius: 6px; padding: 4px;
+      box-shadow: 0 4px 12px rgba(0,0,0,.25); white-space: nowrap;
+    }
+    #toolbar button { background: none; border: none; color: #fff; padding: 6px 12px; cursor: pointer; font-size: 13px; }
+    #toolbar button:hover { background: #444c56; border-radius: 4px; }
+
+    #popover {
+      position: fixed; display: none; z-index: 11; width: 300px;
+      background: #fff; border: 1px solid #d0d7de; border-radius: 8px;
+      box-shadow: 0 8px 24px rgba(0,0,0,.15); padding: 12px;
+    }
+    #popover textarea { width: 100%; box-sizing: border-box; min-height: 60px; resize: vertical; font: inherit; }
+    #popover .quote { font-size: 12px; color: #57606a; margin-bottom: 8px; max-height: 40px; overflow: hidden; }
+    #popover .comments { max-height: 150px; overflow-y: auto; margin-bottom: 8px; font-size: 13px; }
+    #popover .comments div { padding: 6px 0; border-bottom: 1px dashed #eaeef2; }
+    #popover .actions { text-align: right; margin-top: 8px; }
+    #popover .actions button { padding: 5px 12px; margin-left: 6px; cursor: pointer; }
+
+    pre#store { background: #f6f8fa; padding: 12px; border-radius: 8px; font-size: 12px; max-height: 220px; overflow: auto; }
+    .hint { color: #57606a; font-size: 13px; }
+  </style>
+</head>
+<body>
+  <h2>滑词添加评论 Demo</h2>
+  <p class="hint">选中文章文字 → 点“💬 写评论”。批注持久化到 localStorage，刷新后仍在；已处理跨段落、重叠批注、正文小幅编辑后的锚点校正。双击高亮可删除批注。</p>
+
+  <div id="article">
+    <h3>浏览器渲染管线简述</h3>
+    <p>当你在地址栏输入 URL 并回车，浏览器会先进行 DNS 解析，找到对应服务器的 IP 地址，然后通过 TCP 三次握手建立连接，如果是 HTTPS 还会多出 TLS 握手的过程。连接建立后，浏览器发送 HTTP 请求，服务器返回响应报文。</p>
+    <p>拿到 HTML 之后，渲染引擎开始工作：首先解析 HTML 构建 DOM 树，同时解析 CSS 构建 CSSOM，二者合并生成渲染树。随后进入布局阶段，计算每个节点的几何信息，再进行绘制，把像素一层层画到屏幕上。现代浏览器为了性能引入了合成，通过 GPU 将图层合并，减少重排重绘的开销。</p>
+    <p>需要注意的是，JavaScript 的执行会阻塞解析器，所以脚本通常放在底部或者加 defer 属性。而 async 脚本下载和执行都不阻塞解析，但执行顺序不确定，适合独立模块。</p>
+  </div>
+
+  <h3>批注数据（锚点 = 纯文本字符偏移 + quote 引用校验）</h3>
+  <pre id="store"></pre>
+
+  <div id="toolbar"><button id="btn-comment">💬 写评论</button></div>
+
+  <div id="popover">
+    <div class="quote" id="po-quote"></div>
+    <div class="comments" id="po-comments"></div>
+    <textarea id="po-input" placeholder="写下你的评论…"></textarea>
+    <div class="actions">
+      <button id="po-cancel">取消</button>
+      <button id="po-save">保存</button>
+    </div>
+  </div>
+
+  <script>
+    const article = document.getElementById('article')
+    const toolbar = document.getElementById('toolbar')
+    const popover = document.getElementById('popover')
+    const STORE_KEY = 'sliding-comments-v1'
+
+    /** 批注模型：与 DOM 结构完全解耦，可直接存库/多人同步
+     *  { id, start, end, quote, before, after, comments:[{text,time}] }
+     *  start/end 为相对 article.textContent 的字符偏移 */
+    let annotations = JSON.parse(localStorage.getItem(STORE_KEY) || '[]')
+
+    // 每条批注按 id 哈希取一种颜色（重叠时多条横线叠加）
+    const PALETTE = ['#e36209', '#8250df', '#1a7f37', '#0969da', '#cf222e', '#9a6700']
+    const colorOf = id => PALETTE[id % PALETTE.length]
+
+    // ================= 1. 选区 → 字符偏移 =================
+    // Range 偏移换算为容器纯文本偏移；跳过 .anno 内文本，
+    // 保证“在已有批注上再滑词”时偏移依然准确
+    function rangeToOffsets(range) {
+      let start = null, end = null, count = 0
+      const walker = document.createTreeWalker(article, NodeFilter.SHOW_TEXT, {
+        acceptNode(node) {
+          return node.parentElement.closest('.anno') ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT
+        }
+      })
+      const offsetOfContainer = (container, offset) => {
+        // container 是文本节点：直接相加；是元素节点：数它前面（含第 offset 个子节点前）的文本量
+        if (container.nodeType === Node.TEXT_NODE) return textUntil(container) + offset
+        let acc = 0, child
+        for (let i = 0; (child = container.childNodes[i]); i++) {
+          if (i >= offset) break
+          acc += plainTextLen(child)
+        }
+        return acc
+      }
+      const textUntil = target => { // 目标文本节点在逻辑文本流中的起始偏移
+        let acc = 0, node
+        const w = document.createTreeWalker(article, NodeFilter.SHOW_TEXT, {
+          acceptNode(n) { return n.parentElement.closest('.anno') ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT }
+        })
+        while ((node = w.nextNode())) {
+          if (node === target) return acc
+          acc += node.textContent.length
+        }
+        return acc
+      }
+      const plainTextLen = n => (n.nodeType === Node.TEXT_NODE ? n.textContent.length : 0)
+
+      // 主遍历：定位 start/end 所在文本节点
+      const nodes = []
+      let node
+      while ((node = walker.nextNode())) nodes.push(node)
+      for (const n of nodes) {
+        if (n === range.startContainer) start = count + range.startOffset
+        if (n === range.endContainer) end = count + range.endOffset
+        count += n.textContent.length
+      }
+      if (start == null) start = offsetOfContainer(range.startContainer, range.startOffset)
+      if (end == null) end = offsetOfContainer(range.endContainer, range.endOffset)
+      return { start: Math.min(start, end), end: Math.max(start, end) }
+    }
+
+    // ================= 2. 锚点防漂移（relocate） =================
+    // 正文被编辑导致偏移失效时，用「前上下文 + 引文 + 后上下文」重新定位
+    function relocate(a, text) {
+      if (text.slice(a.start, a.end) === a.quote) return a
+      const ctx = (a.before || '') + a.quote + (a.after || '')
+      let idx = text.indexOf(ctx)
+      if (idx >= 0) return { ...a, start: idx + (a.before || '').length, end: idx + (a.before || '').length + a.quote.length }
+      idx = text.indexOf(a.quote)
+      if (idx >= 0) return { ...a, start: idx, end: idx + a.quote.length }
+      return null // 定位失败：丢弃或标记失效
+    }
+
+    // ================= 3. 渲染 =================
+    // 思路：把全文按所有批注边界切成「覆盖集合相同」的最小区间段，
+    // 每段单独包裹一个 <span class="anno">，重叠批注表现为同一段挂多个颜色横线，
+    // 全程不产生嵌套包裹元素。区间按起点降序处理，包裹操作不影响后续偏移。
+    function render() {
+      unwrapAll()
+      paintStore()
+      const text = article.textContent
+      annotations = annotations.map(a => relocate(a, text)).filter(Boolean)
+      if (!annotations.length) return
+
+      // 3.1 计算边界与区间段
+      const bounds = new Set([0, text.length])
+      annotations.forEach(a => { bounds.add(Math.min(a.start, text.length)); bounds.add(Math.min(a.end, text.length)) })
+      const sorted = [...bounds].sort((x, y) => x - y)
+      const groups = [] // {s, e, ids:[]} 相邻且覆盖集合相同的段合并
+      for (let i = 0; i < sorted.length - 1; i++) {
+        const s = sorted[i], e = sorted[i + 1]
+        if (s === e) continue
+        const ids = annotations.filter(a => a.start <= s && a.end >= e).map(a => a.id).sort((x, y) => x - y)
+        if (!ids.length) continue
+        const last = groups[groups.length - 1]
+        if (last && last.e === s && last.ids.join() === ids.join()) last.e = e
+        else groups.push({ s, e, ids })
+      }
+
+      // 3.2 降序包裹，先切节点再入 span
+      for (const g of groups.reverse()) wrapRange(g.s, g.e, g.ids)
+    }
+
+    function wrapRange(s, e, ids) {
+      let count = 0, node
+      const walker = document.createTreeWalker(article, NodeFilter.SHOW_TEXT)
+      while ((node = walker.nextNode())) {
+        const len = node.textContent.length
+        const nodeStart = count, nodeEnd = count + len
+        count = nodeEnd
+        if (nodeEnd <= s || nodeStart >= e) continue        // 不相交
+        if (node.parentElement.closest('.anno')) continue   // 已被更早的组包裹（不相交区间）
+        let i = Math.max(nodeStart, s), j = Math.min(nodeEnd, e)
+        if (i > nodeStart) node = node.splitText(i - nodeStart) // 切出左残留
+        if (node.textContent.length > j - i) node.splitText(j - i) // 切出右残留
+        const span = document.createElement('span')
+        span.className = 'anno'
+        span.dataset.annos = ids.join(' ')
+        span.title = ids.map(id => commentSummary(id)).join('\n')
+        span.style.boxShadow = ids.map(id => `inset 0 2px 0 ${colorOf(id)}, inset 0 -2px 0 ${colorOf(id)}`).join(',')
+        span.style.background = 'rgba(255,215,0,.28)' // 统一底色，横线颜色区分不同批注
+        node.parentNode.insertBefore(span, node)
+        span.appendChild(node)
+        // walker 当前指针在 span 内的文本节点上，nextNode() 自然走向后方
+      }
+    }
+
+    function unwrapAll() {
+      article.querySelectorAll('.anno').forEach(el => el.replaceWith(...el.childNodes))
+      article.normalize()
+    }
+
+    function hexToRgba(hex, a) {
+      const n = parseInt(hex.slice(1), 16)
+      return `rgba(${n >> 16},${(n >> 8) & 255},${n & 255},${a})`
+    }
+
+    function commentSummary(id) {
+      const a = annotations.find(x => x.id === id)
+      if (!a) return ''
+      return `「${truncate(a.quote)}」 ${a.comments.map(c => c.text).join(' / ') || '（无评论）'}`
+    }
+    const truncate = (s, n = 15) => s.length > n ? s.slice(0, n) + '…' : s
+
+    function paintStore() {
+      document.getElementById('store').textContent = JSON.stringify(annotations, null, 2)
+      localStorage.setItem(STORE_KEY, JSON.stringify(annotations))
+    }
+
+    // ================= 4. selectionchange → 浮动工具栏 =================
+    // 比 mouseup 可靠：键盘 shift+方向键选词、触摸长按选词都能捕获
+    let pendingRange = null
+    let pendingDraft = null
+
+    document.addEventListener('selectionchange', () => {
+      const sel = document.getSelection()
+      if (!sel || sel.isCollapsed || !article.contains(sel.anchorNode) || !article.contains(sel.focusNode)) {
+        toolbar.style.display = 'none'
+        return
+      }
+      pendingRange = sel.getRangeAt(0).cloneRange()
+      const rect = pendingRange.getBoundingClientRect()
+      toolbar.style.display = 'block'
+      toolbar.style.left = Math.max(8, rect.left + rect.width / 2 - toolbar.offsetWidth / 2) + 'px'
+      toolbar.style.top = Math.max(8, rect.top - toolbar.offsetHeight - 6) + 'px'
+    })
+
+    document.addEventListener('mousedown', e => {
+      if (!toolbar.contains(e.target) && !popover.contains(e.target)) toolbar.style.display = 'none'
+      if (!popover.contains(e.target)) popover.style.display = 'none'
+    })
+
+    document.getElementById('btn-comment').addEventListener('click', () => {
+      if (!pendingRange) return
+      const { start, end } = rangeToOffsets(pendingRange)
+      const quote = article.textContent.slice(start, end)
+      if (!quote.trim()) return
+      toolbar.style.display = 'none'
+      pendingDraft = { start, end }
+      openPopover(quote, pendingRange.getBoundingClientRect(), null)
+      document.getSelection().removeAllRanges()
+    })
+
+    // ================= 5. 评论弹窗 =================
+    let editingId = null
+
+    function openPopover(quote, rect, existing) {
+      editingId = existing ? existing.id : null
+      document.getElementById('po-quote').textContent = '「' + truncate(quote, 60) + '」'
+      document.getElementById('po-comments').innerHTML = existing
+        ? existing.comments.map(c => `<div>${escapeHtml(c.text)}<br><small style="color:#8b949e">${c.time}</small></div>`).join('')
+        : ''
+      document.getElementById('po-input').value = ''
+      popover.style.display = 'block'
+      popover.style.left = Math.min(innerWidth - 320, Math.max(8, rect.left)) + 'px'
+      popover.style.top = Math.min(innerHeight - 280, rect.bottom + 8) + 'px'
+      document.getElementById('po-input').focus()
+    }
+
+    function escapeHtml(s) { return s.replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])) }
+
+    document.getElementById('po-cancel').addEventListener('click', () => popover.style.display = 'none')
+
+    document.getElementById('po-save').addEventListener('click', () => {
+      const text = document.getElementById('po-input').value.trim()
+      if (!text) return
+      const time = new Date().toLocaleString()
+      if (editingId != null) {
+        const a = annotations.find(x => x.id === editingId)
+        a && a.comments.push({ text, time })
+      } else if (pendingDraft) {
+        const { start, end } = pendingDraft
+        const t = article.textContent
+        annotations.push({
+          id: Date.now(), start, end,
+          quote: t.slice(start, end),
+          before: t.slice(Math.max(0, start - 20), start),
+          after: t.slice(end, end + 20),
+          comments: [{ text, time }],
+        })
+      }
+      popover.style.display = 'none'
+      render()
+    })
+
+    // 点击批注 → 查看评论/追加；双击 → 删除
+    article.addEventListener('click', e => {
+      const span = e.target.closest('.anno')
+      if (!span) return
+      const ids = span.dataset.annos.split(' ').map(Number)
+      const a = annotations.find(x => x.id === ids[0])
+      if (!a) return
+      if (e.detail === 2) {
+        if (confirm(`删除批注「${truncate(a.quote)}」及全部 ${a.comments.length} 条评论？`)) {
+          annotations = annotations.filter(x => !ids.includes(x.id))
+          render()
+        }
+        return
+      }
+      openPopover(a.quote, span.getBoundingClientRect(), a)
+    })
+
+    render()
+  </script>
+</body>
+</html>
