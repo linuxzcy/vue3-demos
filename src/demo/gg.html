@@ -1,0 +1,1111 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Swiper coverflow · 3D 透视 + 顶住边缘</title>
+
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/swiper@8.4.7/swiper-bundle.min.css">
+
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      padding: 32px 20px 60px;
+      font-family: -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
+      background: #f4f5f7;
+      color: #1f2329;
+    }
+
+    /* ============ 父元素（宽度基准 + 裁切边界） ============
+     两侧图“顶住边缘”是相对这个盒子说的，所以它不能有 padding。
+     overflow:hidden 负责把旋转后伸出容器的部分裁掉，外边缘才显得是“切”在边缘上。
+     position:relative 是给里面的导航按钮和进度条当定位基准的。 */
+    .gg-stage {
+      --gg-radius: 14px;
+      --gg-mask: .5;
+      position: relative;
+      max-width: 1000px;
+      margin: 0 auto;
+      border-radius: 16px;
+      overflow: hidden;
+      background: #e9ebef;
+    }
+
+    /* ============ Swiper 容器 ============ */
+    .gg-swiper {
+      --slide-w: 500px;
+      --gg-persp: 1200px;
+      width: 100%;
+      overflow: hidden;
+      padding: 0;
+    }
+
+    /* 关键：coverflow 的 3D 观感全靠透视。
+     Swiper 自带 .swiper-3d{perspective:1200px}，这里用双类名提权把它覆盖成可控的值。
+     没有 perspective，rotate 只会把图压扁，不会有“近大远小”。 */
+    .gg-swiper.swiper-3d {
+      perspective: var(--gg-persp);
+    }
+
+    .gg-swiper .swiper-wrapper {
+      align-items: stretch;
+    }
+
+    /* slidesPerView:'auto' → 宽度完全由 CSS 决定；flex-shrink:0 + margin:0 保证无缝 */
+    .gg-swiper .swiper-slide {
+      width: var(--slide-w);
+      flex-shrink: 0;
+      height: 380px;
+      position: relative;
+      margin: 0;
+      padding: 0;
+    }
+
+    /* ============ 单张卡片 ============
+     不加 border-radius：圆角统一交给父元素裁，否则相邻卡片各自的圆角
+     会在视觉上形成“缺口”，看不出 slides 是严丝合缝的。 */
+    .gg-card {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 64px;
+      font-weight: 700;
+      color: rgba(255, 255, 255, .92);
+      letter-spacing: 2px;
+      user-select: none;
+    }
+
+    /* ============ 图片必须自己铺满 slide ============
+     * 换成 <img> 之后效果不对，根因有两条：
+     *
+     * 1) <img> 不给 width/height 时会用自己的固有尺寸（这里是 1200x700），
+     *    而 .gg-card 是 display:flex + align-items:center —— center 只是“居中”，
+     *    并不会把子项拉伸到 380px 高，所以图片永远填不满。
+     *
+     * 2) flex 子项默认 min-width:auto，图片的 min-width 解析为固有宽度 1200px，
+     *    于是它连“被压缩到容器宽度”都做不到，直接溢出。
+     *
+     * 结果：图片以 1200x700 盖在 500x380 的 slide 上，左右各溢出 350px、上下各 160px。
+     * 你看到的只是图片中间一小块，而 coverflow 算出来的 S / stretch / 贴合边缘
+     * 描述的是 slide 盒子，和肉眼看到的图片对不上 —— 所以“效果不对”。
+     *
+     * 修法：显式撑满 + object-fit。
+     */
+    .gg-swiper .swiper-slide>.gg-card>img {
+      display: block;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      /* 不变形地铺满，多出来的部分裁掉。
+                              想完整显示不裁切就改 contain，但会留黑边。 */
+      min-width: 0;
+      /* 保险：解除 flex 子项 min-width:auto 的限制 */
+      min-height: 0;
+    }
+
+    /* ============ 非当前卡片的遮罩 ============
+     * 原来挂在 .swiper-slide-prev::before / .swiper-slide-next::before 上，
+     * 看不到是因为【绘制顺序】：
+     *   ::before 是盒树里的第一个子节点，而 .gg-card 是 position:absolute。
+     *   两个都是「定位元素 + z-index:auto」，所以按 DOM 顺序画 ——
+     *   ::before 先画，.gg-card 后画并整个盖住它。遮罩一直在，只是被压在下面了。
+     *
+     * 改挂在 .gg-card::after 上：::after 是最后一个子节点，同样是定位元素，
+     * 所以画在 <img> 之上。而且这样天然跟着卡片自己的圆角走。
+     *
+     * 用「非 active」而不是 prev/next：离开视口的第 2、3 张也能一起暗掉，不会漏。
+     */
+    .gg-card::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      border-radius: var(--gg-radius);
+      background: rgba(10, 14, 24, 1);
+      opacity: var(--gg-mask);
+      transition: opacity .35s ease;
+      pointer-events: none;
+    }
+
+    .swiper-slide-active .gg-card::after {
+      opacity: 0;
+    }
+
+    /* ============ 卡片圆角 ============ */
+    .gg-swiper .swiper-slide>.gg-card>img {
+      border-radius: var(--gg-radius);
+    }
+
+    /* ============ 左右导航 ============
+     * 按钮是 .gg-stage 的子元素，而 .swiper 因为设了 perspective 会形成层叠上下文。
+     * 给按钮 z-index:30 就能稳稳压在整组 slides 之上。 */
+    .gg-nav {
+      position: absolute;
+      top: 50%;
+      transform: translateY(-50%);
+      z-index: 30;
+      width: 42px;
+      height: 42px;
+      padding: 0;
+      border: 0;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: rgba(255, 255, 255, .92);
+      color: #1f2329;
+      cursor: pointer;
+      box-shadow: 0 2px 10px rgba(0, 0, 0, .18);
+      transition: background .2s ease, transform .2s ease;
+    }
+
+    .gg-nav:hover {
+      background: #fff;
+    }
+
+    .gg-nav:active {
+      transform: translateY(-50%) scale(.94);
+    }
+
+    .gg-nav svg {
+      width: 20px;
+      height: 20px;
+      display: block;
+    }
+
+    .gg-nav-prev {
+      left: 14px;
+    }
+
+    .gg-nav-next {
+      right: 14px;
+    }
+
+    /* ============ 卡片下方的「进度式」分页条 ============
+     * 位置：在 .gg-stage【外面】、卡片区域的下方，不压在图片上。
+     *       因此在浅色页面上要用深色，不能沿用"压在图上"那套白色半透明。
+     *
+     * 形态：非当前 = 小圆点（短横线）；当前 = 拉长的横条，里面跟着 autoplay 计时填满。
+     *       两者宽度不同，靠 width 的 transition 做「点 ⇄ 条」的展开动画。
+     *
+     * 为什么用 #ggBars 提权：
+     *   Swiper 的 bullets 默认是 8px 圆点，写死在
+     *   .swiper-pagination-bullet（width/height/border-radius/opacity）
+     *   和 .swiper-pagination-horizontal.swiper-pagination-bullets .swiper-pagination-bullet（margin）
+     *   两条规则里。后者是 0,3,0 的特异性，光靠"我的 style 在后面"能赢但很脆，
+     *   用 id 选择器（1,1,0）直接压过去，谁在前谁在后都无所谓。
+     *
+     * 结构：<span class="swiper-pagination-bullet gg-bar"><i></i></span>
+     *   .gg-bar  是槽（底色），<i> 是填充条（宽度由 JS 每帧写）。
+     *
+     * 注意这里【不能】给 .gg-bar 加 overflow:hidden：
+     *   overflow:hidden 会把下面那个用来扩大点击热区的 ::after 一起裁掉，
+     *   热区就白做了。填充条的圆角由 <i> 自己的 border-radius:inherit 负责，
+     *   它的宽度只从 0 走到 100%，本来就不会溢出。 */
+    #ggBars {
+      /* 必须显式写 static：
+       *   Swiper 会给这个元素加 .swiper-pagination，而那条规则是 position:absolute。
+       *   以前它在 .gg-stage 里、靠 absolute 定位，看不出问题；
+       *   现在它移到卡片下方、要参与正常流，如果不覆盖就会被抽出行外。
+       *   同理 .swiper-pagination-bullets.swiper-pagination-horizontal 还会给
+       *   bottom/left/width，static 下 bottom/left 自然失效，不用管。 */
+      position: static;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      gap: var(--gg-gap, 6px);
+      max-width: 1000px;
+      margin: 16px auto 0;
+      /* 给一行高度：圆点有垂直居中的基准，::after 撑出来的热区也装得下 */
+      height: 16px;
+    }
+
+    #ggBars .gg-bar {
+      flex: 0 0 auto;
+      width: var(--gg-dot-w, 8px);   /* 非当前：小圆点 / 短横线 */
+      height: 4px;
+      margin: 0;
+      padding: 0;
+      border-radius: 2px;
+      background: #c9ced6;
+      opacity: 1;
+      cursor: pointer;
+      position: relative;
+      transition: width .32s cubic-bezier(.4, 0, .2, 1), background .2s ease;
+    }
+
+    /* 当前：拉长成横条，槽色变浅，让里面的深色填充看得清 */
+    #ggBars .gg-bar.swiper-pagination-bullet-active {
+      width: var(--gg-bar-w, 48px);
+      background: #e2e5ea;
+    }
+
+    /* 点击热区：视觉上 4px 太窄，用伪元素上下各撑 6px */
+    #ggBars .gg-bar::after {
+      content: "";
+      position: absolute;
+      left: 0;
+      right: 0;
+      top: -6px;
+      bottom: -6px;
+    }
+
+    #ggBars .gg-bar > i {
+      display: block;
+      width: 0;
+      height: 100%;
+      background: #1f2329;
+      border-radius: inherit;
+    }
+
+    #ggBars .gg-bar:hover {
+      background: #aeb5bf;
+    }
+
+    /* 当前条的槽是浅色，悬停不要变深，否则填充的对比度会被破坏 */
+    #ggBars .gg-bar.swiper-pagination-bullet-active:hover {
+      background: #e2e5ea;
+    }
+
+    /* 拖滑块调宽度时临时关掉过渡，否则元素会"追着"目标值跑，手感发黏 */
+    #ggBars.no-anim .gg-bar {
+      transition: none;
+    }
+
+    /* ============ 控制区 ============ */
+    .gg-panel {
+      max-width: 1000px;
+      margin: 18px auto 0;
+      background: #fff;
+      border-radius: 14px;
+      padding: 20px 22px;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, .06);
+    }
+
+    .gg-row {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      flex-wrap: wrap;
+    }
+
+    .gg-row+.gg-row {
+      margin-top: 14px;
+    }
+
+    .gg-label {
+      font-size: 13px;
+      color: #646a73;
+      white-space: nowrap;
+      min-width: 132px;
+    }
+
+    .gg-panel input[type="range"] {
+      flex: 1 1 260px;
+      min-width: 160px;
+    }
+
+    .gg-panel input[type="range"]:disabled {
+      opacity: .4;
+    }
+
+    .gg-val {
+      font-size: 13px;
+      font-weight: 600;
+      color: #1f2329;
+      min-width: 74px;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .gg-check {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 13px;
+      color: #1f2329;
+      cursor: pointer;
+      user-select: none;
+    }
+
+    .gg-preset {
+      border: 1px solid #d8dbe0;
+      background: #fff;
+      border-radius: 8px;
+      padding: 6px 12px;
+      font-size: 13px;
+      color: #1f2329;
+      cursor: pointer;
+    }
+
+    .gg-preset:hover {
+      border-color: #5b6ee1;
+      color: #3f51b5;
+    }
+
+    .gg-preset.is-on {
+      background: #eef0fd;
+      border-color: #5b6ee1;
+      color: #3f51b5;
+      font-weight: 600;
+    }
+
+    .gg-readout {
+      margin-top: 16px;
+      padding-top: 16px;
+      border-top: 1px solid #eef0f2;
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(148px, 1fr));
+      gap: 12px;
+    }
+
+    .gg-metric {
+      background: #f7f8fa;
+      border-radius: 10px;
+      padding: 12px 14px;
+    }
+
+    .gg-metric dt {
+      font-size: 12px;
+      color: #8a9099;
+      margin: 0 0 6px;
+      line-height: 1.4;
+    }
+
+    .gg-metric dd {
+      margin: 0;
+      font-size: 19px;
+      font-weight: 600;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .gg-ok {
+      color: #1a9c62;
+    }
+
+    .gg-bad {
+      color: #d64545;
+    }
+
+    .gg-tip {
+      max-width: 1000px;
+      margin: 20px auto 0;
+      font-size: 13px;
+      line-height: 1.75;
+      color: #646a73;
+    }
+
+    .gg-tip code {
+      background: #eceef1;
+      border-radius: 4px;
+      padding: 1px 6px;
+      font-size: 12.5px;
+    }
+  </style>
+</head>
+
+<body>
+
+  <!-- 父元素：两侧图顶住的就是它的边缘，超出部分被它裁掉 -->
+  <div class="gg-stage" id="ggStage">
+    <div class="swiper gg-swiper" id="ggSwiper">
+      <div class="swiper-wrapper">
+        <div class="swiper-slide gg-slide">
+          <div class="gg-card gg-card-1">
+            <img src="https://picsum.photos/seed/sw01/1200/700" alt="">
+          </div>
+        </div>
+        <div class="swiper-slide gg-slide">
+          <div class="gg-card gg-card-2"><img src="https://picsum.photos/seed/sw02/1200/700" alt=""></div>
+        </div>
+        <div class="swiper-slide gg-slide">
+          <div class="gg-card gg-card-3"><img src="https://picsum.photos/seed/sw03/1200/700" alt=""></div>
+        </div>
+        <div class="swiper-slide gg-slide">
+          <div class="gg-card gg-card-4"><img src="https://picsum.photos/seed/sw04/1200/700" alt=""></div>
+        </div>
+        <div class="swiper-slide gg-slide">
+          <div class="gg-card gg-card-5"><img src="https://picsum.photos/seed/sw05/1200/700" alt=""></div>
+        </div>
+        <div class="swiper-slide gg-slide">
+          <div class="gg-card gg-card-6"><img src="https://picsum.photos/seed/sw06/1200/700" alt=""></div>
+        </div>
+        <div class="swiper-slide gg-slide">
+          <div class="gg-card gg-card-7"><img src="https://picsum.photos/seed/sw07/1200/700" alt=""></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 左右导航 + 底部进度式分页条：放在 .gg-stage 里，靠 z-index 压在 slides 之上 -->
+    <button type="button" class="gg-nav gg-nav-prev" id="ggPrev" aria-label="上一张">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+        stroke-linecap="round" stroke-linejoin="round">
+        <path d="M15 5 8 12l7 7" />
+      </svg>
+    </button>
+    <button type="button" class="gg-nav gg-nav-next" id="ggNext" aria-label="下一张">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+        stroke-linecap="round" stroke-linejoin="round">
+        <path d="M9 5l7 7-7 7" />
+      </svg>
+    </button>
+  </div>
+
+  <!-- 分页条：放在卡片区域【下面】的独立一行，不压在图片上。
+       由 Swiper 的 pagination 填充（每个 slide 一条，点击可跳转）。
+       注意它在 .gg-stage 外面，所以吃不到 stage 上的 CSS 变量，
+       尺寸变量（--gg-dot-w / --gg-bar-w）要直接挂在这个元素上。 -->
+  <div class="gg-bars" id="ggBars"></div>
+
+  <div class="gg-panel">
+    <div class="gg-row">
+      <span class="gg-label">轮播图宽度占父元素</span>
+      <input type="range" id="ggRatio" min="0.3" max="0.7" step="0.001" value="0.5">
+      <span class="gg-val" id="ggRatioVal">50.0%</span>
+    </div>
+    <div class="gg-row">
+      <span class="gg-label">3D 旋转 rotate</span>
+      <input type="range" id="ggRotate" min="0" max="90" step="1" value="50">
+      <span class="gg-val" id="ggRotateVal">50°</span>
+    </div>
+    <div class="gg-row">
+      <span class="gg-label">景深 depth</span>
+      <input type="range" id="ggDepth" min="0" max="400" step="5" value="100">
+      <span class="gg-val" id="ggDepthVal">100</span>
+    </div>
+    <div class="gg-row">
+      <span class="gg-label">缩放 scale</span>
+      <input type="range" id="ggScale" min="0.5" max="1" step="0.01" value="1">
+      <span class="gg-val" id="ggScaleVal">1.00</span>
+    </div>
+    <div class="gg-row">
+      <span class="gg-label">透视 perspective</span>
+      <input type="range" id="ggPersp" min="600" max="3000" step="50" value="1200">
+      <span class="gg-val" id="ggPerspVal">1200px</span>
+    </div>
+    <div class="gg-row">
+      <span class="gg-label">卡片圆角</span>
+      <input type="range" id="ggRadius" min="0" max="40" step="1" value="14">
+      <span class="gg-val" id="ggRadiusVal">14px</span>
+    </div>
+    <div class="gg-row">
+      <span class="gg-label">非当前卡遮罩</span>
+      <input type="range" id="ggMask" min="0" max="0.85" step="0.01" value="0.5">
+      <span class="gg-val" id="ggMaskVal">0.50</span>
+    </div>
+    <div class="gg-row">
+      <span class="gg-label">自动播放间隔</span>
+      <input type="range" id="ggDelay" min="1500" max="8000" step="100" value="4000">
+      <span class="gg-val" id="ggDelayVal">4000ms</span>
+    </div>
+    <div class="gg-row">
+      <span class="gg-label">分页点宽度</span>
+      <input type="range" id="ggDotW" min="4" max="24" step="1" value="8">
+      <span class="gg-val" id="ggDotWVal">8px</span>
+    </div>
+    <div class="gg-row">
+      <span class="gg-label">当前条宽度</span>
+      <input type="range" id="ggBarW" min="16" max="160" step="2" value="48">
+      <span class="gg-val" id="ggBarWVal">48px</span>
+    </div>
+    <div class="gg-row">
+      <span class="gg-label">往内推 stretch</span>
+      <input type="range" id="ggStretch" min="-400" max="400" step="1" value="0" disabled>
+      <span class="gg-val" id="ggStretchVal">自动</span>
+    </div>
+    <div class="gg-row">
+      <span class="gg-label">选项</span>
+      <label class="gg-check"><input type="checkbox" id="ggAutoplay" checked> 自动轮播</label>
+      <label class="gg-check"><input type="checkbox" id="ggAutoFlush" checked> 自动贴合父元素边缘</label>
+      <label class="gg-check"><input type="checkbox" id="ggShadows" checked> slideShadows</label>
+    </div>
+    <div class="gg-row">
+      <span class="gg-label">预设</span>
+      <button class="gg-preset" data-preset="classic">经典 coverflow</button>
+      <button class="gg-preset" data-preset="strong">强透视</button>
+      <button class="gg-preset" data-preset="subtle">微立体</button>
+      <button class="gg-preset" data-preset="flat">扁平（压住一半）</button>
+    </div>
+
+    <div class="gg-readout">
+      <dl class="gg-metric">
+        <dt>父元素宽 W</dt>
+        <dd id="mW">—</dd>
+      </dl>
+      <dl class="gg-metric">
+        <dt>轮播图宽 S</dt>
+        <dd id="mS">—</dd>
+      </dl>
+      <dl class="gg-metric">
+        <dt>往内推 stretch</dt>
+        <dd id="mStretch">—</dd>
+      </dl>
+      <dl class="gg-metric">
+        <dt>右侧图投影宽度</dt>
+        <dd id="mProjW">—</dd>
+      </dl>
+      <dl class="gg-metric">
+        <dt>右侧图外边缘 − 父元素右边缘</dt>
+        <dd id="mFlushR">—</dd>
+      </dl>
+      <dl class="gg-metric">
+        <dt>左侧图外边缘 − 父元素左边缘</dt>
+        <dd id="mFlushL">—</dd>
+      </dl>
+      <dl class="gg-metric">
+        <dt>当前图压住两侧</dt>
+        <dd id="mCover">—</dd>
+      </dl>
+    </div>
+  </div>
+
+  <div class="gg-tip">
+    <p><strong>这才是真正的 coverflow</strong></p>
+    <p>
+      之前那版把 <code>rotate / depth / scale</code> 全设成 0，只借了 coverflow 的 <code>stretch</code> 做平移，
+      所以看着是平的 —— 那不是 coverflow。现在四个参数都真的在起作用：<br>
+      <code>rotateY</code> 让两侧图转过去，<code>translateZ</code>（由 <code>depth</code> 控制）把它们推远，
+      <code>scale</code> 再缩一点，配合 <code>perspective</code> 就有近大远小的立体感。
+    </p>
+    <p>
+      <strong>它为什么能同时“顶住边缘”</strong>：<code>stretch</code> 决定两侧图往内推多少。
+      勾上「自动贴合父元素边缘」后，推的距离是<strong>算出来的</strong> ——
+      把外边缘经过 scale → rotateY → translateZ → 透视投影之后的落点，反解成 <code>stretch</code>，
+      让它正好落在父元素边缘上。
+    </p>
+    <p>
+      勾掉之后 <code>stretch</code> 变成手动滑块，就能看到“贴合”和“留白”的区别。
+      点「扁平（压住一半）」可以对比：那才是上一版的效果。
+    </p>
+  </div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.7.1/jquery.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/swiper@8.4.7/swiper-bundle.min.js"></script>
+  <script>
+    $(function () {
+
+      var $stage = $('#ggStage');
+      var $swiper = $('#ggSwiper');
+      var swiper = null;
+
+      var params = {
+        slideRatio: 0.8,    // 轮播图宽度 / 父元素宽度
+        rotate: 0,     // coverflowEffect.rotate —— 两侧图转多少度
+        depth: 0,    // coverflowEffect.depth  —— 往屏幕里推多远
+        scale: 0.7,      // coverflowEffect.scale  —— 两侧图缩到多少
+        perspective:600,  // CSS perspective
+        autoFlush: true,   // 勾上：stretch 由公式算出，让外边缘正好顶住父元素
+        stretch: 0,      // 取消勾选后用手动值
+        shadows: true,
+        radius: 14,      // 卡片圆角
+        mask: 0.5,       // 非当前卡片的遮罩浓度
+        autoplay: true,  // 自动轮播
+        autoplayDelay: 4000,  // 每张停留时长（ms）—— 也是进度条填满一次的时长
+        dotW: 8,         // 非当前分页点的宽度（px）
+        barW: 48         // 当前分页条拉长后的宽度（px）
+      };
+
+      /* ------------------------------------------------------------------
+       * 计算 slide 宽度 S 和 coverflowEffect.stretch
+       *
+       * Swiper coverflow 对每张 slide 的 transform（源码 effect-coverflow.js）：
+       *     offsetMultiplier = (center - slideOffset - slideSize/2) / slideSize * modifier
+       *     translateX = stretch * offsetMultiplier
+       *     translateZ = -depth  * |offsetMultiplier|
+       *     rotateY    = rotate  * offsetMultiplier
+       *     scale      = 1 - (1 - params.scale) * |offsetMultiplier|
+       *
+       * 注意 offsetMultiplier 不是归一化到 [-1,1]，而是「以 slide 宽度为单位」的偏移量。
+       * 当前图居中时为 0，紧邻的两张正好是 ∓1 —— 所以两侧图的 translateZ 就是 -depth，
+       * rotateY 就是 ∓rotate，scale 就是 params.scale。
+       *
+       * 于是右侧那张图（offsetMultiplier = -1，即 rotateY = -rotate）上，任意一点：
+       *     先 scale            → (k·x, 0, 0)
+       *     再 rotateY(θ)       → (k·x·cosθ, 0, -k·x·sinθ)      θ = -rotate
+       *     再 translate3d      → (k·x·cosθ + tx, 0, -k·x·sinθ + tz)   tz = -depth
+       * 它的布局中心在父元素中心右侧 S 处（slides 首尾相接、spaceBetween=0），
+       * 最后做透视投影（父元素中心为投影原点，透视距离 P）：
+       *
+       *     screenX(x) = ( S + k·x·cos r + tx ) · P / ( P - k·x·sin r + depth )
+       *
+       * 令外边缘 x = S/2 的落点等于父元素右边缘 W/2，解出 tx：
+       *
+       *     tx = (W/2) · (P - k·(S/2)·sin r + depth) / P - S - k·(S/2)·cos r
+       *     stretch = -tx        （右侧图 offsetMultiplier = -1，故 translateX = -stretch）
+       *
+       * 自检：rotate=0、depth=0、scale=1 时退化成 stretch = (3S - W) / 2，
+       *       也就是「不旋转时把两侧图推到刚好贴边」的那个解。
+       * ------------------------------------------------------------------ */
+      function calcGeometry() {
+        var W = $stage[0].clientWidth;
+        var S = W * params.slideRatio;
+        var stretch;
+
+        if (params.autoFlush) {
+          var r = params.rotate * Math.PI / 180;
+          var k = params.scale;
+          var P = params.perspective;
+          var hs = S / 2;
+          var tx = (W / 2) * (P - k * hs * Math.sin(r) + params.depth) / P
+            - S - k * hs * Math.cos(r);
+          stretch = -tx;
+        } else {
+          stretch = params.stretch;
+        }
+        return { W: W, S: S, stretch: stretch };
+      }
+
+      // 圆角 / 遮罩浓度挂在 .gg-stage 上，卡片和它的 ::after 都读这两个变量
+      function applyStyleVars() {
+        $stage.css('--gg-radius', params.radius + 'px');
+        $stage.css('--gg-mask', params.mask);
+      }
+
+      /* 分页条的尺寸变量必须挂在 #ggBars 自己身上 ——
+       * 它在 .gg-stage 外面（放在卡片下方），吃不到 stage 上的变量。 */
+      var barAnimT = null;
+      function applyBarVars() {
+        $('#ggBars').css({
+          '--gg-dot-w': params.dotW + 'px',
+          '--gg-bar-w': params.barW + 'px'
+        });
+      }
+
+      // 拖滑块时先关掉 width 的过渡，松手再恢复，否则元素会黏黏地"追"目标值
+      function applyBarVarsNoAnim() {
+        var $bars = $('#ggBars').addClass('no-anim');
+        applyBarVars();
+        clearTimeout(barAnimT);
+        barAnimT = setTimeout(function () {
+          $bars.removeClass('no-anim');
+        }, 80);
+      }
+
+      function buildSwiper() {
+        var g = calcGeometry();
+        $swiper.css('--slide-w', g.S + 'px');
+        $swiper.css('--gg-persp', params.perspective + 'px');
+        applyStyleVars();
+
+        swiper = new Swiper('#ggSwiper', {
+          effect: 'coverflow',
+          slidesPerView: 'auto',
+          centeredSlides: true,
+          spaceBetween: 0,                 // 无空隙
+          loop: true,
+          loopAdditionalSlides: 2,
+          watchSlidesProgress: true,
+          grabCursor: true,
+          speed: 450,
+          // 左右导航按钮
+          navigation: {
+            prevEl: '#ggPrev',
+            nextEl: '#ggNext'
+          },
+          // 底部进度式分页条：每个 slide 一条横条，点击可跳转
+          pagination: {
+            el: '#ggBars',
+            type: 'bullets',
+            clickable: true,
+            // Swiper 调它渲染每一条；className 就是 'swiper-pagination-bullet'，
+            // 必须原样带上，否则 Swiper 找不到这些元素、也就不会加 active 类。
+            renderBullet: function (index, className) {
+              return '<span class="' + className + ' gg-bar"><i></i></span>';
+            }
+          },
+          autoplay: {
+            enabled: params.autoplay,
+            delay: params.autoplayDelay,
+            // 用户拖动后不要停掉自动播放，只暂停
+            disableOnInteraction: false,
+            // 鼠标悬停暂停（会和进度条一起暂停，见下面的 autoplayPause/autoplayResume）
+            pauseOnMouseEnter: true,
+            // 等过渡动画结束再开始算下一次的 delay，这样进度条不会和滑动重叠
+            waitForTransition: true
+          },
+          coverflowEffect: {
+            rotate: params.rotate,
+            depth: params.depth,
+            scale: params.scale,
+            stretch: g.stretch,
+            modifier: 1,
+            slideShadows: params.shadows
+          }
+        });
+      }
+
+      /**
+       * 只改参数、不重建实例（重建会跳回第一张）。
+       * coverflow 的 transform 是每帧从 params 里读的，改完 update() 即可。
+       */
+      function applyGeometry() {
+        if (!swiper) return;
+        var g = calcGeometry();
+
+        $swiper.css('--slide-w', g.S + 'px');
+        $swiper.css('--gg-persp', params.perspective + 'px');
+        applyStyleVars();
+
+        var cf = swiper.params.coverflowEffect;
+        cf.rotate = params.rotate;
+        cf.depth = params.depth;
+        cf.scale = params.scale;
+        cf.stretch = g.stretch;
+        cf.slideShadows = params.shadows;
+
+        // 关掉 slideShadows 时，Swiper 不会主动删掉已经生成的阴影元素，手动清一下
+        if (!params.shadows) {
+          $swiper.find('.swiper-slide-shadow-left, .swiper-slide-shadow-right').remove();
+        }
+
+        swiper.update();
+        // update() 不一定重跑 effect 的 setTranslate，这里显式触发一次
+        swiper.setTranslate(swiper.getTranslate());
+      }
+
+      /* ------------------------------------------------------------------
+       * 底部进度式分页条的填充
+       *
+       * 为什么不用 Swiper 自带的 progressbar：
+       *   那个是「整条 = 全局进度」，只有一根滑块在走。
+       *   这里要的是「每张 slide 一条，当前那条填满」——
+       *   本质上就是 bullets（每张一个），只不过把「亮起来」换成「填满」。
+       *
+       * 为什么不能用 CSS animation 了事：
+       *   填充必须和 autoplay 的真实计时对齐。而 Swiper 8 的 swiper.autoplay
+       *   只暴露 { running, paused, pause, run, start, stop }，
+       *   **没有 timeLeft**（那是 Swiper 11 才加的），拿不到"还剩多少毫秒"，
+       *   所以只能自己记时，并且在对的时刻重置。
+       *
+       * 一个周期怎么走（见 autoplay 模块的 run()）：
+       *     run()  →  setTimeout(delay)     ← 进度条应该从这一刻开始填
+       *            →  slideNext(speed)      ← 填满的那一刻开始滑动
+       *            →  wrapper transitionend → onTransitionEnd → run()   ← 下一轮
+       *   所以重置点 = 每次过渡结束，也就是 slideChangeTransitionEnd。
+       *   （Swiper 的 transitionend 监听先于 autoplay 的注册，
+       *     我们的重置比 autoplay 的 run() 早不到 1ms，4000ms 里可忽略。）
+       * ------------------------------------------------------------------ */
+      var barRaf = null;
+      var bar = { start: 0, frozen: 0, paused: false };
+
+      function barActiveEl() {
+        return document.querySelector('#ggBars .swiper-pagination-bullet-active > i');
+      }
+
+      function barReset() {
+        bar.start = performance.now();
+        bar.frozen = 0;
+        bar.paused = false;
+      }
+
+      function barElapsed() {
+        return bar.paused
+          ? bar.frozen
+          : bar.frozen + (performance.now() - bar.start);
+      }
+
+      // 悬停时暂停：把已经走过的毫秒冻起来，恢复时接着走
+      function barPause() {
+        if (bar.paused) return;
+        bar.frozen = barElapsed();
+        bar.paused = true;
+      }
+
+      // Swiper 在 mouseleave 里调的是 run() —— delay 从头开始，所以这里也归零
+      function barResume() {
+        barReset();
+      }
+
+      // 非当前的条一律归零（否则上一张会停在 100% 不动）
+      function barZeroOthers() {
+        $('#ggBars .gg-bar').each(function () {
+          if (!$(this).hasClass('swiper-pagination-bullet-active')) {
+            this.firstChild.style.width = '0%';
+          }
+        });
+      }
+
+      function barTick() {
+        var el = barActiveEl();
+        if (el) {
+          var dur = Math.max(1, params.autoplayDelay);
+          el.style.width = (Math.min(1, barElapsed() / dur) * 100).toFixed(2) + '%';
+        }
+        barRaf = requestAnimationFrame(barTick);
+      }
+
+      function barStart() {
+        if (barRaf) return;
+        barRaf = requestAnimationFrame(barTick);
+      }
+
+      function barStop() {
+        if (barRaf) {
+          cancelAnimationFrame(barRaf);
+          barRaf = null;
+        }
+      }
+
+      /**
+       * 每次"该重新开始填"的时候调它。
+       * autoplay 开着 → 当前条从 0 开始走；关着 → 当前条直接满格当选中态用。
+       */
+      function barRefresh() {
+        barZeroOthers();
+        var el = barActiveEl();
+
+        if (params.autoplay) {
+          if (el) el.style.width = '0%';   // 先归零，避免闪一帧 100%
+          barReset();
+          barStart();
+        } else {
+          barStop();
+          if (el) el.style.width = '100%';
+        }
+      }
+
+      /* ---------- 量真实结果 ---------- */
+      function report() {
+        var g = calcGeometry();
+
+        $('#mW').text(Math.round(g.W));
+        $('#mS').text(Math.round(g.S));
+        $('#mStretch').html(
+          g.stretch.toFixed(1)
+          + '<span style="font-size:12px;color:#8a9099;font-weight:400">'
+          + (params.autoFlush ? ' 自动' : ' 手动') + '</span>'
+        );
+
+        var stage = $stage[0].getBoundingClientRect();
+        var $act = $swiper.find('.swiper-slide-active');
+        var $prev = $swiper.find('.swiper-slide-prev');
+        var $next = $swiper.find('.swiper-slide-next');
+        if (!$act.length || !$prev.length || !$next.length) return;
+
+        var a = $act[0].getBoundingClientRect();
+        var p = $prev[0].getBoundingClientRect();
+        var n = $next[0].getBoundingClientRect();
+
+        // 投影后的实际宽度（旋转 + 透视之后会比 S 窄）
+        $('#mProjW').html(
+          Math.round(n.width)
+          + '<span style="font-size:12px;color:#8a9099;font-weight:400"> / S ' + Math.round(a.width) + '</span>'
+        );
+
+        // 外边缘与父元素边缘的差，0 = 顶住
+        var flushR = Math.round(n.right - stage.right);
+        var flushL = Math.round(p.left - stage.left);
+        $('#mFlushR').text(flushR + 'px').attr('class', Math.abs(flushR) <= 1 ? 'gg-ok' : 'gg-bad');
+        $('#mFlushL').text(flushL + 'px').attr('class', Math.abs(flushL) <= 1 ? 'gg-ok' : 'gg-bad');
+
+        // 当前图压住两侧多少
+        var overlapR = Math.max(0, a.right - n.left);
+        var overlapL = Math.max(0, p.right - a.left);
+        var cover = Math.max(overlapR, overlapL) / a.width;
+        $('#mCover').html(
+          (cover * 100).toFixed(1) + '%'
+          + '<span style="font-size:12px;color:#8a9099;font-weight:400">'
+          + ' (右 ' + Math.round(overlapR) + 'px / 左 ' + Math.round(overlapL) + 'px)</span>'
+        );
+      }
+
+      /* ---------- 交互 ---------- */
+      var rafId = null;
+      function scheduleApply() {
+        if (rafId) cancelAnimationFrame(rafId);
+        rafId = requestAnimationFrame(function () {
+          rafId = null;
+          applyGeometry();
+          report();
+        });
+      }
+
+      function syncUI() {
+        $('#ggRatio').val(params.slideRatio);
+        $('#ggRatioVal').text((params.slideRatio * 100).toFixed(1) + '%');
+        $('#ggRotate').val(params.rotate);
+        $('#ggRotateVal').text(params.rotate + '\u00b0');
+        $('#ggDepth').val(params.depth);
+        $('#ggDepthVal').text(params.depth);
+        $('#ggScale').val(params.scale);
+        $('#ggScaleVal').text(params.scale.toFixed(2));
+        $('#ggPersp').val(params.perspective);
+        $('#ggPerspVal').text(params.perspective + 'px');
+        $('#ggRadius').val(params.radius);
+        $('#ggRadiusVal').text(params.radius + 'px');
+        $('#ggMask').val(params.mask);
+        $('#ggMaskVal').text(params.mask.toFixed(2));
+        $('#ggDelay').val(params.autoplayDelay);
+        $('#ggDelayVal').text(params.autoplayDelay + 'ms');
+        $('#ggDotW').val(params.dotW);
+        $('#ggDotWVal').text(params.dotW + 'px');
+        $('#ggBarW').val(params.barW);
+        $('#ggBarWVal').text(params.barW + 'px');
+        $('#ggAutoplay').prop('checked', params.autoplay);
+        $('#ggAutoFlush').prop('checked', params.autoFlush);
+        $('#ggShadows').prop('checked', params.shadows);
+        // 自动播放关掉时，间隔滑块没有意义
+        $('#ggDelay').prop('disabled', !params.autoplay);
+
+        // 自动模式下 stretch 滑块置灰，显示算出来的值
+        var g = calcGeometry();
+        $('#ggStretch').prop('disabled', params.autoFlush);
+        $('#ggStretch').val(params.autoFlush ? Math.round(g.stretch) : params.stretch);
+        $('#ggStretchVal').text(params.autoFlush ? '自动' : String(params.stretch));
+      }
+
+      $('#ggRatio').on('input', function () {
+        params.slideRatio = parseFloat(this.value);
+        $('#ggRatioVal').text((params.slideRatio * 100).toFixed(1) + '%');
+        $('.gg-preset').removeClass('is-on');
+        scheduleApply();
+      });
+      $('#ggRotate').on('input', function () {
+        params.rotate = parseFloat(this.value);
+        $('#ggRotateVal').text(params.rotate + '\u00b0');
+        $('.gg-preset').removeClass('is-on');
+        scheduleApply();
+      });
+      $('#ggDepth').on('input', function () {
+        params.depth = parseFloat(this.value);
+        $('#ggDepthVal').text(params.depth);
+        $('.gg-preset').removeClass('is-on');
+        scheduleApply();
+      });
+      $('#ggScale').on('input', function () {
+        params.scale = parseFloat(this.value);
+        $('#ggScaleVal').text(params.scale.toFixed(2));
+        $('.gg-preset').removeClass('is-on');
+        scheduleApply();
+      });
+      $('#ggPersp').on('input', function () {
+        params.perspective = parseFloat(this.value);
+        $('#ggPerspVal').text(params.perspective + 'px');
+        $('.gg-preset').removeClass('is-on');
+        scheduleApply();
+      });
+      // 圆角和遮罩只改 CSS 变量，跟 Swiper 无关，不需要 scheduleApply
+      $('#ggRadius').on('input', function () {
+        params.radius = parseFloat(this.value);
+        $('#ggRadiusVal').text(params.radius + 'px');
+        applyStyleVars();
+      });
+      $('#ggMask').on('input', function () {
+        params.mask = parseFloat(this.value);
+        $('#ggMaskVal').text(params.mask.toFixed(2));
+        applyStyleVars();
+      });
+
+      // 改间隔要让 autoplay 重新计时 —— 否则这一轮还在用旧 delay，
+      // 进度条会和实际滑动对不上（滑块拖到 8000 但这一轮仍是 4000 就滑走了）
+      $('#ggDelay').on('input', function () {
+        params.autoplayDelay = parseFloat(this.value);
+        $('#ggDelayVal').text(params.autoplayDelay + 'ms');
+
+        if (swiper && swiper.autoplay && swiper.autoplay.running) {
+          swiper.params.autoplay.delay = params.autoplayDelay;
+          swiper.autoplay.stop();   // 清掉旧 timeout
+          swiper.autoplay.start();  // 按新 delay 重新 run() 一轮
+        }
+        barRefresh();
+      });
+
+      $('#ggAutoplay').on('change', function () {
+        params.autoplay = this.checked;
+        syncUI();
+
+        if (swiper && swiper.autoplay) {
+          swiper.params.autoplay.enabled = params.autoplay;
+          if (params.autoplay) swiper.autoplay.start();
+          else swiper.autoplay.stop();
+        }
+        barRefresh();
+      });
+
+      // 分页点的两个宽度只改 CSS 变量，跟 Swiper 无关
+      $('#ggDotW').on('input', function () {
+        params.dotW = parseFloat(this.value);
+        $('#ggDotWVal').text(params.dotW + 'px');
+        applyBarVarsNoAnim();
+      });
+      $('#ggBarW').on('input', function () {
+        params.barW = parseFloat(this.value);
+        $('#ggBarWVal').text(params.barW + 'px');
+        applyBarVarsNoAnim();
+      });
+      $('#ggStretch').on('input', function () {
+        params.stretch = parseFloat(this.value);
+        $('#ggStretchVal').text(String(params.stretch));
+        $('.gg-preset').removeClass('is-on');
+        scheduleApply();
+      });
+      $('#ggAutoFlush').on('change', function () {
+        params.autoFlush = this.checked;
+        syncUI();
+        scheduleApply();
+      });
+      $('#ggShadows').on('change', function () {
+        params.shadows = this.checked;
+        scheduleApply();
+      });
+
+      var PRESETS = {
+        classic: { slideRatio: 0.5, rotate: 50, depth: 100, scale: 1, perspective: 1200, autoFlush: true, shadows: true },
+        strong: { slideRatio: 0.5, rotate: 65, depth: 250, scale: 0.85, perspective: 900, autoFlush: true, shadows: true },
+        subtle: { slideRatio: 0.5, rotate: 25, depth: 60, scale: 0.95, perspective: 1600, autoFlush: true, shadows: true },
+        flat: { slideRatio: 0.5, rotate: 0, depth: 0, scale: 1, perspective: 1200, autoFlush: true, shadows: false }
+      };
+
+      $('.gg-preset').on('click', function () {
+        var name = $(this).data('preset');
+        var p = PRESETS[name];
+        if (!p) return;
+        $.extend(params, p);
+        $('.gg-preset').removeClass('is-on');
+        $(this).addClass('is-on');
+        syncUI();
+        scheduleApply();
+      });
+
+      function bindSwiperEvents() {
+        swiper.on('slideChangeTransitionEnd', function () {
+          report();
+          // 过渡结束 = autoplay 的 delay 重新开始计时 = 进度条该重新填
+          barRefresh();
+        });
+        swiper.on('transitionEnd', report);
+        swiper.on('resize', report);
+
+        // 一开始滑动就先把其他条归零，不用等过渡结束
+        swiper.on('slideChange', barZeroOthers);
+
+        // 悬停暂停 / 恢复（由 autoplay.pauseOnMouseEnter 触发）
+        swiper.on('autoplayPause', barPause);
+        swiper.on('autoplayResume', barResume);
+      }
+
+      $(window).on('resize', function () {
+        // 父元素宽度变了，S 和 stretch 都要重算
+        scheduleApply();
+      });
+
+      /* ---------- 启动 ---------- */
+      buildSwiper();
+      bindSwiperEvents();
+      $('.gg-preset[data-preset="classic"]').addClass('is-on');
+      syncUI();
+      applyBarVars();            // 分页点的宽窄
+      barRefresh();              // 第一轮的进度条从这里开始填
+      report();
+      setTimeout(report, 150);   // 字体加载完再量一次
+    });
+  </script>
+
+</body>
+
+</html>
