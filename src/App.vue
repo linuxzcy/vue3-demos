@@ -12,6 +12,7 @@ const navItems = [
   { path: "/sse", label: "SSE 流式" },
   { path: "/sse-chatgpt", label: "ChatGPT 渲染" },
   { path: "/tinymce", label: "TinyMCE" },
+  { path: "/word-canvas", label: "Word画布" },
   { path: "/amap", label: "高德地图" },
   { path: "/logistics-track", label: "物流轨迹" },
   { path: "/scroll-spy", label: "目录联动" },

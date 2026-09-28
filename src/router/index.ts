@@ -35,6 +35,11 @@ const router = createRouter({
       component: () => import("../views/TinyMcePage.vue"),
     },
     {
+      path: "/word-canvas",
+      name: "WordCanvas",
+      component: () => import("../views/WordCanvasPage.vue"),
+    },
+    {
       path: "/amap",
       name: "Amap",
       component: () => import("../views/AmapPage.vue"),
