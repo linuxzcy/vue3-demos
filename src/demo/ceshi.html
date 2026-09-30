@@ -1,0 +1,464 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Swiper + jQuery 轮播 · coverflow 平叠 · 中间压过侧卡中心 · 两侧顶边</title>
+
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/swiper@8.4.7/swiper-bundle.min.css">
+
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        html,
+        body {
+            overflow-x: hidden;
+        }
+
+        body {
+            min-height: 100vh;
+            background: #101320;
+            font-family: -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+            color: #dfe4f0;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            gap: 20px;
+            padding: 24px 0;
+        }
+
+        h1 {
+            text-align: center;
+            font-size: 16px;
+            font-weight: 600;
+            color: #8b93a9;
+        }
+
+        /* ---------- 父元素:两侧卡片的外沿就顶在它的左右边界 ---------- */
+        /* 1200px 上限居中,窄于 1200 时满宽,几何按实际容器宽重算(适配) */
+        .stage {
+            position: relative;
+            width: 100%;
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        /* Swiper 容器高度 = 卡片高 + 上下阴影余量 */
+        .stage .swiper {
+            width: 100%;
+            height: calc(var(--card-height, 300px) + 36px);
+            overflow: hidden;
+        }
+
+        .stage .swiper-wrapper {
+            align-items: center;
+        }
+
+        /* ---------- 卡片 ---------- */
+        /* 宽度走 CSS 变量 + slidesPerView:'auto',Swiper 才不会覆写 inline width */
+        .stage .swiper-slide {
+            width: calc(var(--card-width-ratio, 0.62) * 100%);
+            height: var(--card-height, 300px);
+            border-radius: 18px;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            justify-content: flex-end;
+            cursor: pointer;
+            /* 简写 transition 会毁掉 Swiper 自己写的 transition-property:transform → 只能用长写法 */
+            transition-property: transform, box-shadow;
+            transition-duration: 0ms;
+            will-change: transform;
+        }
+
+        /* 中间卡片:层级压住两侧 + 阴影更重 + 亮度更高,强化「压住」的层次 */
+        .stage .swiper-slide {
+            z-index: 1;
+            box-shadow: 0 8px 24px rgba(0, 0, 0, .45);
+            filter: brightness(.72);
+        }
+
+        .stage .swiper-slide-active {
+            z-index: 10;
+            box-shadow: 0 18px 50px rgba(0, 0, 0, .65);
+            filter: brightness(1);
+        }
+
+        .slide-num {
+            position: absolute;
+            top: 14px;
+            left: 18px;
+            font-size: 44px;
+            font-weight: 800;
+            color: rgba(255, 255, 255, .35);
+            pointer-events: none;
+        }
+
+        .slide-cap {
+            padding: 14px 18px;
+            background: linear-gradient(transparent, rgba(0, 0, 0, .55));
+            font-size: 15px;
+            color: #fff;
+        }
+
+        /* ---------- 分页点 ---------- */
+        .stage .swiper-pagination {
+            bottom: 0 !important;
+        }
+
+        .stage .swiper-pagination-bullet {
+            width: 8px;
+            height: 8px;
+            background: #58607a;
+            opacity: 1;
+            transition: all .25s;
+        }
+
+        .stage .swiper-pagination-bullet-active {
+            width: 22px;
+            border-radius: 5px;
+            background: #5b8cff;
+        }
+
+        /* ---------- 控制面板:卡片大小 / 侧卡缩放 ---------- */
+        .panel {
+            max-width: 1200px;
+            width: 100%;
+            margin: 0 auto;
+            padding: 0 24px;
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 14px 26px;
+            font-size: 13px;
+            color: #9aa3ba;
+        }
+
+        .panel label {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .panel input[type="range"] {
+            width: 180px;
+            accent-color: #5b8cff;
+        }
+
+        .panel output {
+            min-width: 46px;
+            color: #dfe4f0;
+            font-variant-numeric: tabular-nums;
+        }
+
+        /* 「压过中心」达标指示:需求里最容易被调参调坏的一条,实时提醒 */
+        .badge {
+            padding: 3px 12px;
+            border-radius: 999px;
+            font-size: 12px;
+        }
+
+        .badge.ok {
+            background: rgba(62, 168, 110, .18);
+            color: #52c98f;
+        }
+
+        .badge.warn {
+            background: rgba(224, 108, 87, .18);
+            color: #f0876f;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>effect: coverflow · 中间压住两侧中心以上 · 两侧顶到父元素边缘</h1>
+
+    <!-- 父元素(.stage)就是「顶边」参照物 -->
+    <div class="stage" id="stage">
+        <div class="swiper" id="mySwiper">
+            <div class="swiper-wrapper" id="wrapper"></div>
+            <div class="swiper-pagination" id="pagination"></div>
+        </div>
+    </div>
+
+    <!-- 需求「卡片可以设置大小/缩放」→ 两个滑杆实时改几何 -->
+    <div class="panel">
+        <label>
+            中间卡片宽度
+            <input type="range" id="ratioInput" min="45" max="80" step="1" value="62">
+            <output id="ratioOut">62%</output>
+        </label>
+        <label>
+            两侧卡片缩放
+            <input type="range" id="scaleInput" min="55" max="100" step="1" value="80">
+            <output id="scaleOut">80%</output>
+        </label>
+        <span class="badge ok" id="overlapBadge"></span>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/jquery@3.7.1/dist/jquery.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/swiper@8.4.7/swiper-bundle.min.js"></script>
+
+    <script>
+        (function ($) {
+            /* =========================================================
+               一、需求是怎么变成公式的(逐步推导,符号与代码同名)
+               =========================================================
+               参与量:
+                 containerWidth    父元素实际宽度,运行时测量,不是写死的
+                 cardWidth         中间(当前)卡片宽度 = centerWidthRatio × containerWidth
+                 centerWidthRatio  滑杆①,0.45 ~ 0.80
+                 sideVisualScale   滑杆②,侧卡相对中间卡的「视觉缩放」,0.55 ~ 1.00
+                 pullToCenterPx    侧卡被 coverflow 拉向中间的距离(px),就是要求解的 stretch
+                 perspectiveDepth  侧卡被推向屏幕深处的距离(px),Swiper 参数叫 depth
+
+               ── 事实 1:投影缩放由 depth 决定 ──
+               Swiper coverflow 给每张侧卡写 transform: translate3d(x, 0, -depth),
+               容器透视 perspective 固定 1200px(Swiper 源码硬编码,不是我们的参数)。
+               透视投影把 z=-depth 的物体整体缩小:
+                   sideVisualScale = SWIPER_PERSPECTIVE / (SWIPER_PERSPECTIVE + perspectiveDepth)
+               我们想让侧卡视觉上缩到 sideVisualScale,反解:
+                   perspectiveDepth = SWIPER_PERSPECTIVE × (1/sideVisualScale − 1)
+               ⇒ 所以「缩放」这个滑杆不直接改 scale,而是换算成 depth 喂给 Swiper。
+
+               ── 事实 2:侧卡的中心距 ──
+               spaceBetween:0 且 centeredSlides:true ⇒
+                   未拉伸时,相邻卡片中心距 = cardWidth(两卡严丝相邻)
+               coverflow 把侧卡向中间平移 pullToCenterPx ⇒
+                   平移后中心距 = cardWidth − pullToCenterPx
+               投影再把「中心距和卡宽」一起乘 sideVisualScale(绕容器中心缩放)⇒
+                   投影后侧卡中心距 = (cardWidth − pullToCenterPx) × sideVisualScale
+                   投影后侧卡半宽   = (cardWidth / 2) × sideVisualScale
+
+               ── 条件①:两侧卡片顶到父元素边缘 ──
+               侧卡外沿 = 投影后中心距 + 投影后半宽,要求正好等于容器半宽:
+                   (cardWidth − pullToCenterPx)·s + (cardWidth/2)·s = containerWidth/2
+               合并含 s 的项(1 + 0.5 = 1.5,即「一整张中心距 + 半张自己宽度」):
+                   s × (1.5·cardWidth − pullToCenterPx) = containerWidth/2
+               解出:
+                   pullToCenterPx = 1.5·cardWidth − (containerWidth/2) / s
+               这就是代码里 stretchPx 的来历:①里只有这一个未知数,顶边 ⇒ 唯一解。
+               Swiper 的 stretch 参数是「占卡片宽度的百分比」:
+                   stretchPercent = pullToCenterPx / cardWidth × 100
+
+               ── 条件②:中间卡片压过两侧卡片的中心以上 ──
+               中间卡半宽要大于侧卡投影后的中心距:
+                   cardWidth/2 > (cardWidth − pullToCenterPx)·s
+               把条件①解出的 pullToCenterPx 代回去化简(左边右边各消掉一项):
+                   cardWidth × (1 + s) > containerWidth
+               ⇒ 只要 ratio 和 scale 满足它,顶边布局下「压过中心」自动成立;
+                  面板徽章实时检查的就是这个不等式,不满足时提醒调大。
+               ========================================================= */
+
+            var SWIPER_PERSPECTIVE = 1200; // coverflow 源码内部硬编码的 perspective,必须用它算投影
+
+            /* 可调状态(对应两个滑杆,均可在控制台改:CAROUSEL.state) */
+            var state = {
+                centerWidthRatio: 0.62, // 中间卡宽 = 0.62 × 容器宽
+                sideVisualScale: 0.80,  // 侧卡视觉缩到 80%
+            };
+
+            /* 卡片数据(占位渐变,避免依赖外网图) */
+            var SLIDES = [
+                { title: '黎明 · 城市天际线', gradient: ['#3f5efb', '#fc466b'] },
+                { title: '深海 · 鲸落生态', gradient: ['#185a9d', '#43c6ac'] },
+                { title: '苔原 · 极光之夜', gradient: ['#0f3443', '#34e89e'] },
+                { title: '峡谷 · 赤色岩层', gradient: ['#870000', '#f9a825'] },
+                { title: '云海 · 雪峰日出', gradient: ['#5f2c82', '#49a09d'] },
+                { title: '雨林 · 雾中绿冠', gradient: ['#134e5e', '#71b280'] },
+            ];
+
+            var $stage = $('#stage');
+            var $swiperContainer = $('#mySwiper');
+            var swiper = null;
+
+            function buildSlides() {
+                var $wrapper = $('#wrapper');
+                $wrapper.empty();
+                $.each(SLIDES, function (index, slide) {
+                    $('<div class="swiper-slide"></div>')
+                        .css('background', 'linear-gradient(135deg,' + slide.gradient[0] + ',' + slide.gradient[1] + ')')
+                        .append('<span class="slide-num">' + (index + 1) + '</span>')
+                        .append($('<div class="slide-cap"></div>').text(slide.title))
+                        .appendTo($wrapper);
+                });
+            }
+
+            /* 按上面的推导算出全部布局量,一次返回(纯函数,不动 DOM) */
+            function computeLayout() {
+                var containerWidth = $swiperContainer.width();
+                var cardWidth = state.centerWidthRatio * containerWidth;
+                var sideVisualScale = state.sideVisualScale;
+
+                // 事实 1:滑杆的「缩放」换算成 Swiper 的 depth
+                var perspectiveDepth = SWIPER_PERSPECTIVE * (1 / sideVisualScale - 1);
+
+                // 条件①(顶边)的唯一解:侧卡要被拉向中间多少 px
+                var pullToCenterPx = 1.5 * cardWidth - (containerWidth / 2) / sideVisualScale;
+                // Swiper 参数是相对卡片宽的百分比;拉负数(拉过头)没有意义,钳到 0
+                var stretchPercent = Math.max(0, pullToCenterPx / cardWidth * 100);
+
+                // 条件②校验:中间卡是否仍压过侧卡中心
+                var sideCardCenterDistance = (cardWidth - pullToCenterPx) * sideVisualScale; // 投影后侧卡中心距
+                var overlapsPastSideCenter = cardWidth / 2 > sideCardCenterDistance;
+                // 超出中心的量,折算成「占侧卡投影半宽的百分比」,面板展示用
+                var overlapPastCenterRatio =
+                    (cardWidth / 2 - sideCardCenterDistance) / (cardWidth * sideVisualScale / 2);
+
+                return {
+                    containerWidth: containerWidth,
+                    cardWidth: cardWidth,
+                    cardHeight: Math.min(cardWidth / 1.5, 460), // 3:2 比例,超高屏钳 460 上限
+                    perspectiveDepth: perspectiveDepth,
+                    stretchPercent: stretchPercent,
+                    overlapsPastSideCenter: overlapsPastSideCenter,
+                    overlapPastCenterRatio: overlapPastCenterRatio,
+                };
+            }
+
+            /* 卡片尺寸写进 CSS 变量(slidesPerView:'auto' 靠它量宽) */
+            function applyCardSize(layout) {
+                $stage.css({
+                    '--card-width-ratio': (layout.cardWidth / layout.containerWidth).toFixed(6),
+                    '--card-height': layout.cardHeight + 'px',
+                });
+            }
+
+            /* 把 depth / stretch 推给 Swiper 并重排 */
+            function applySwiperEffectParams(layout) {
+                if (!swiper) return;
+
+                /* 关键坑:卡片带着 translateZ 时 getBoundingClientRect 量到的是
+                   「投影后」的宽度,update() 前不清掉旧 transform 会越量越小 → 全部清空 */
+                swiper.slides.each(function () {
+                    this.style.transform = '';
+                    delete this.swiperSlideSize;
+                });
+
+                swiper.params.coverflowEffect.depth = layout.perspectiveDepth;
+                swiper.params.coverflowEffect.stretch = layout.stretchPercent.toFixed(4) + '%';
+
+                swiper.update();
+                swiper.slideTo(swiper.activeIndex, 0, false); // 宽度变了,归位重算 effect
+            }
+
+            /* 面板数值 + 条件②达标徽章 */
+            function renderPanel(layout) {
+                $('#ratioOut').text(Math.round(state.centerWidthRatio * 100) + '%');
+                $('#scaleOut').text(Math.round(state.sideVisualScale * 100) + '%');
+
+                var $badge = $('#overlapBadge');
+                $badge.toggleClass('ok', layout.overlapsPastSideCenter)
+                    .toggleClass('warn', !layout.overlapsPastSideCenter)
+                    .text(layout.overlapsPastSideCenter
+                        ? '✓ 压过侧卡中心 ' + Math.round(layout.overlapPastCenterRatio * 100) + '% 半宽'
+                        : '✗ 未压过中心:需 卡宽×(1+缩放)>容器宽,请调大其一');
+            }
+
+            /* 全链路重算:滑杆变化 / resize / 窗口恢复可见 都走这里 */
+            function recalcAndApply() {
+                // 窗口隐藏时容器宽为 0,算出的全是 NaN,会毁掉 Swiper 测量 → 跳过,等重排事件
+                if (!$swiperContainer.width()) return;
+                var layout = computeLayout();
+                applyCardSize(layout);
+                applySwiperEffectParams(layout);
+                renderPanel(layout);
+            }
+
+            /* Swiper 初始化(容器有宽度后才会被调用) */
+            function initSwiper() {
+                var layout = computeLayout();
+                applyCardSize(layout); // 先落尺寸,Swiper 初始化时才能量到真实卡宽
+
+                swiper = new Swiper('#mySwiper', {
+                    effect: 'coverflow',
+                    coverflowEffect: {
+                        rotate: 0,            // 要「平叠压住」而非 3D 侧转
+                        stretch: '50%',       // 占位,立刻被 applySwiperEffectParams 覆盖
+                        depth: 300,           // 同上
+                        modifier: 1,
+                        slideShadows: false,  // 自带阴影会糊在圆角上,用 CSS box-shadow 代替
+                    },
+                    centeredSlides: true,     // 中间卡居中,「中心距=卡宽」的前提
+                    slidesPerView: 'auto',    // 读 CSS 卡宽,不让 Swiper 写 inline width
+                    spaceBetween: 0,          // 「中心距=卡宽」公式里的 1.5 依赖它
+                    loop: true,
+                    grabCursor: true,
+                    slideToClickedSlide: true, // 点侧卡直接切过去
+                    speed: 450,
+                    autoplay: { delay: 2600, disableOnInteraction: false },
+                    pagination: { el: '#pagination', clickable: true },
+                });
+
+                applySwiperEffectParams(layout);
+                renderPanel(layout);
+            }
+
+            $(function () {
+                buildSlides();
+
+                // 容器还没宽度(窗口隐藏等)就轮询等待,避免拿 0 宽初始化出 NaN 几何
+                (function waitForContainerSize() {
+                    if (!$swiperContainer.width()) {
+                        setTimeout(waitForContainerSize, 150);
+                        return;
+                    }
+                    initSwiper();
+                })();
+
+                /* 两个滑杆 = 「卡片可以设置大小 / 缩放」 */
+                $('#ratioInput').on('input', function () {
+                    state.centerWidthRatio = this.value / 100;
+                    recalcAndApply();
+                });
+                $('#scaleInput').on('input', function () {
+                    state.sideVisualScale = this.value / 100;
+                    recalcAndApply();
+                });
+
+                /* 适配:resize 防抖重算,父元素从 1200px 到手机满宽都走同一套公式 */
+                var resizeTimer;
+                $(window).on('resize orientationchange', function () {
+                    clearTimeout(resizeTimer);
+                    resizeTimer = setTimeout(recalcAndApply, 120);
+                });
+
+                // 从隐藏/后台窗口恢复时不会触发 resize,补一个可见性钩子重排
+                $(document).on('visibilitychange', function () {
+                    if (!document.hidden) {
+                        clearTimeout(resizeTimer);
+                        resizeTimer = setTimeout(recalcAndApply, 120);
+                    }
+                });
+            });
+
+            /* 控制台调参/观察入口:CAROUSEL.debug() 能打印每一步中间数值 */
+            window.CAROUSEL = {
+                get state() { return state; },
+                apply: recalcAndApply,
+                debug: function () {
+                    var layout = computeLayout();
+                    console.table({
+                        '容器宽 containerWidth': layout.containerWidth,
+                        '卡宽 cardWidth (ratio×容器)': layout.cardWidth,
+                        '侧卡缩放 sideVisualScale': state.sideVisualScale,
+                        'depth = 1200×(1/s−1)': layout.perspectiveDepth,
+                        '拉伸 stretchPx = 1.5W−(C/2)/s': 1.5 * layout.cardWidth - layout.containerWidth / 2 / state.sideVisualScale,
+                        'stretch% (占卡宽)': layout.stretchPercent,
+                        '侧卡投影中心距': (layout.cardWidth - (1.5 * layout.cardWidth - layout.containerWidth / 2 / state.sideVisualScale)) * state.sideVisualScale,
+                        '压过中心? (W/2 > 中心距)': layout.overlapsPastSideCenter,
+                    });
+                    return layout;
+                },
+                get swiper() { return swiper; },
+            };
+        })(jQuery);
+    </script>
+</body>
+
+</html>

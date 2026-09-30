@@ -20,6 +20,8 @@ const navItems = [
   { path: "/chunk-upload", label: "切片上传" },
   { path: "/logicflow", label: "工作流" },
   { path: "/print-dual-table", label: "双表打印" },
+  { path: "/translate", label: "谷歌翻译" },
+  { path: "/translate-js", label: "整页翻译" },
   { path: "/login", label: "扫码登录" },
 ];
 

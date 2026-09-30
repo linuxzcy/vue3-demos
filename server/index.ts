@@ -5,6 +5,7 @@ import { WebSocketServer, WebSocket } from "ws";
 import { randomUUID } from "crypto";
 import { createChunkUploadRouter } from "./chunkUpload";
 import { createOAuthRouter } from "./oauth";
+import { createTranslateRouter } from "./translate";
 
 const app = express();
 const server = createServer(app);
@@ -15,6 +16,7 @@ app.use(express.json({ limit: "20mb" }));
 app.use("/uploads", express.static("uploads"));
 app.use("/api/chunk", createChunkUploadRouter());
 app.use("/api/oauth", createOAuthRouter());
+app.use("/api/translate", createTranslateRouter());
 
 // ─── 内存存储 ───────────────────────────────────────────────
 interface ClientMeta {

@@ -1,0 +1,347 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>「两侧顶到父元素边缘」三步推导 · 图解</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            min-height: 100vh;
+            background: #101320;
+            color: #dfe4f0;
+            font-family: -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 18px;
+            padding: 28px 16px;
+        }
+
+        h1 {
+            font-size: 17px;
+            color: #8b93a9;
+        }
+
+        .stepButtons {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            justify-content: center;
+        }
+
+        .stepButtons button {
+            padding: 8px 16px;
+            border: 1px solid #3a4158;
+            border-radius: 8px;
+            background: #1a1f30;
+            color: #c8cfe2;
+            font-size: 13px;
+            cursor: pointer;
+        }
+
+        .stepButtons button.current {
+            background: #5b8cff;
+            border-color: #5b8cff;
+            color: #fff;
+        }
+
+        svg {
+            width: min(96vw, 1200px);
+            height: auto;
+        }
+
+        .formula {
+            font-size: 14px;
+            line-height: 2;
+            text-align: center;
+            color: #9aa3ba;
+        }
+
+        .formula b {
+            color: #ffd479;
+            font-weight: 600;
+        }
+
+        .formula .hit {
+            color: #52c98f;
+        }
+
+        .formula .miss {
+            color: #f0876f;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>「两侧顶到父元素边缘」是怎么一步步调出来的(与 ceshi.html 同一套公式)</h1>
+
+    <div class="stepButtons" id="stepButtons"></div>
+
+    <svg id="scene" viewBox="-980 -190 1960 460"></svg>
+
+    <div class="formula" id="formula"></div>
+
+    <script>
+        /* =========================================================
+           图示的三种参与量(命名与 ceshi.html 完全一致):
+             cardWidth   W = 620  中间卡宽(ratio 0.62 × 容器 1000)
+             pullToCenterPx     = 305  拉伸:侧卡向中间被拉进来的距离
+             sideVisualScale s  = 0.8  透视投影后侧卡整体缩放
+           关键量「侧卡外沿到容器中心的距离」逐步演变:
+             第①步 初始        外沿 = W(中心距) + W/2(半宽)     = 1.5W     = 930
+             第②步 拉伸拉近    外沿 = (W − 拉伸) + W/2           = 1.5W−305 = 625
+             第③步 透视缩小    外沿 = (1.5W − 305) × s           = 500  = 容器半宽 ✓
+           ========================================================= */
+        var containerWidth = 1000;
+        var halfContainer = containerWidth / 2;   // 500
+        var cardWidth = 620;
+        var halfCard = cardWidth / 2;             // 310
+        var pullToCenterPx = 305;
+        var sideVisualScale = 0.8;
+
+        var stages = [
+            {
+                label: '① 初始:严丝相邻',
+                sideCenterDistance: cardWidth,          // 中心距 = 一张卡宽(spaceBetween:0)
+                visualScale: 1,                          // 还没投影缩放,原尺寸
+            },
+            {
+                label: '② 拉伸 pullToCenterPx',
+                sideCenterDistance: cardWidth - pullToCenterPx, // 被拉向中间 305px
+                visualScale: 1,
+            },
+            {
+                label: '③ 透视缩放 ×0.8 → 顶边',
+                sideCenterDistance: (cardWidth - pullToCenterPx) * sideVisualScale,
+                visualScale: sideVisualScale, // 中心距与半宽一起被投影缩小
+            },
+        ];
+
+        /* ---------- SVG 绘制辅助 ---------- */
+        var SVG_NS = 'http://www.w3.org/2000/svg';
+        var $scene = document.getElementById('scene');
+
+        function svg(tag, attrs, text) {
+            var el = document.createElementNS(SVG_NS, tag);
+            for (var key in attrs) el.setAttribute(key, attrs[key]);
+            if (text !== undefined) el.textContent = text;
+            return el;
+        }
+
+        var COLORS = {
+            card: '#5b8cff',
+            centerCard: '#38bdf8',
+            side: '#8a63f2',
+            overflow: 'rgba(240, 135, 111, .35)',
+            edgeLine: '#52c98f',
+            dim: '#58607a',
+            text: '#c8cfe2',
+        };
+
+        /* 动态层的引用,每帧只改几何属性,不重建 DOM */
+        var nodes = {};
+
+        function buildScene() {
+            /* 静态层:父元素底框 + 左右边界参考线 */
+            $scene.appendChild(svg('rect', {
+                x: -halfContainer, y: -120, width: containerWidth, height: 240,
+                fill: 'rgba(255,255,255,.03)', stroke: COLORS.dim,
+                'stroke-dasharray': '6 6', rx: 10,
+            }));
+            [-halfContainer, halfContainer].forEach(function (edgeX) {
+                $scene.appendChild(svg('line', {
+                    x1: edgeX, y1: -170, x2: edgeX, y2: 170,
+                    stroke: COLORS.dim, 'stroke-width': 2,
+                }));
+            });
+            $scene.appendChild(svg('text', {
+                x: 0, y: -178, 'text-anchor': 'middle',
+                fill: COLORS.dim, 'font-size': 22,
+            }, '父元素 containerWidth = ' + containerWidth));
+
+            /* 动态层(绘制顺序:超出警示 → 侧卡 → 中间卡 → 标注) */
+            nodes.overflowRight = svg('rect', { fill: COLORS.overflow, y: -120, height: 240 });
+            nodes.overflowLeft = svg('rect', { fill: COLORS.overflow, y: -120, height: 240 });
+            nodes.sideRight = svg('rect', { fill: COLORS.side, y: -120, height: 240, rx: 14, opacity: .85 });
+            nodes.sideLeft = svg('rect', { fill: COLORS.side, y: -120, height: 240, rx: 14, opacity: .85 });
+            nodes.sideRightLabel = svg('text', { 'text-anchor': 'middle', fill: '#fff', 'font-size': 24 });
+            nodes.sideLeftLabel = svg('text', { 'text-anchor': 'middle', fill: '#fff', 'font-size': 24 });
+            nodes.centerCard = svg('rect', {
+                fill: COLORS.centerCard, y: -120, height: 240, rx: 14,
+                stroke: '#fff', 'stroke-width': 2,
+            });
+            nodes.centerLabel = svg('text', {
+                x: 0, y: 12, 'text-anchor': 'middle', fill: '#fff', 'font-size': 26, 'font-weight': 'bold',
+            }, '中间卡 W=620');
+            /* 外沿标记箭头 + 压线高亮 */
+            nodes.outerMarkRight = svg('path', { stroke: COLORS.edgeLine, 'stroke-width': 4, fill: 'none' });
+            nodes.outerMarkLeft = svg('path', { stroke: COLORS.edgeLine, 'stroke-width': 4, fill: 'none' });
+            nodes.touchBadge = svg('text', {
+                y: 195, 'text-anchor': 'middle', 'font-size': 26, 'font-weight': 'bold',
+            });
+            /* 中心距尺寸线(容器中心 → 侧卡中心) */
+            nodes.centerLineRight = svg('line', { stroke: '#ffd479', 'stroke-width': 2, 'stroke-dasharray': '4 4', y1: -140, y2: -140 });
+            nodes.centerDistLabel = svg('text', { y: -148, 'text-anchor': 'middle', fill: '#ffd479', 'font-size': 22 });
+            /* 半宽分界线:判断「压过中心」 */
+            nodes.centerBoundary = svg('line', {
+                x1: halfCard, y1: -120, x2: halfCard, y2: 120,
+                stroke: '#ffd479', 'stroke-width': 1.5, 'stroke-dasharray': '2 4', opacity: .6,
+            });
+            nodes.centerBoundaryLeft = svg('line', {
+                x1: -halfCard, y1: -120, x2: -halfCard, y2: 120,
+                stroke: '#ffd479', 'stroke-width': 1.5, 'stroke-dasharray': '2 4', opacity: .6,
+            });
+
+            /* 底部拆解:外沿 = 中心距(蓝) + 半宽(投影后)(紫),两段首尾相接 */
+            nodes.segCenterLine = svg('line', {
+                y1: 162, y2: 162, stroke: '#38bdf8', 'stroke-width': 4,
+            });
+            nodes.segHalfLine = svg('line', {
+                y1: 162, y2: 162, stroke: '#c9b3ff', 'stroke-width': 4,
+            });
+            nodes.segCenterLabel = svg('text', {
+                y: 152, 'text-anchor': 'middle', fill: '#7cc4ff', 'font-size': 21,
+            });
+            nodes.segHalfLabel = svg('text', {
+                y: 152, 'text-anchor': 'middle', fill: '#c9b3ff', 'font-size': 21,
+            });
+
+            [nodes.overflowLeft, nodes.overflowRight, nodes.sideLeft, nodes.sideRight,
+            nodes.sideLeftLabel, nodes.sideRightLabel, nodes.centerBoundaryLeft, nodes.centerBoundary,
+            nodes.centerCard, nodes.centerLabel, nodes.outerMarkLeft, nodes.outerMarkRight,
+            nodes.centerLineRight, nodes.centerDistLabel,
+            nodes.segCenterLine, nodes.segCenterLabel, nodes.segHalfLine, nodes.segHalfLabel,
+            nodes.touchBadge,
+            ].forEach(function (el) { $scene.appendChild(el); });
+        }
+
+        /* 按「中心距 + 缩放」画一张侧卡(左右镜像) */
+        function renderSideCards(sideCenterDistance, visualScale) {
+            var projectedHalf = halfCard * visualScale;
+            var rightLeft = sideCenterDistance - projectedHalf;
+            var rightRight = sideCenterDistance + projectedHalf;
+
+            nodes.sideRight.setAttribute('x', rightLeft);
+            nodes.sideRight.setAttribute('width', projectedHalf * 2);
+            nodes.sideLeft.setAttribute('x', -rightRight);
+            nodes.sideLeft.setAttribute('width', projectedHalf * 2);
+            nodes.sideRightLabel.setAttribute('x', sideCenterDistance);
+            nodes.sideRightLabel.setAttribute('y', 12);
+            nodes.sideLeftLabel.setAttribute('x', -sideCenterDistance);
+            nodes.sideLeftLabel.setAttribute('y', 12);
+            nodes.sideRightLabel.textContent = nodes.sideLeftLabel.textContent =
+                '侧卡 ' + Math.round(projectedHalf * 2) + 'px';
+
+            /* 超出父元素边缘的部分:红色警示块 */
+            var overflowWidth = Math.max(0, rightRight - halfContainer);
+            nodes.overflowRight.setAttribute('x', halfContainer);
+            nodes.overflowRight.setAttribute('width', overflowWidth);
+            nodes.overflowLeft.setAttribute('x', -halfContainer - overflowWidth);
+            nodes.overflowLeft.setAttribute('width', overflowWidth);
+            nodes.overflowRight.setAttribute('display', overflowWidth > 1 ? '' : 'none');
+            nodes.overflowLeft.setAttribute('display', overflowWidth > 1 ? '' : 'none');
+
+            /* 外沿绿色标记:正好压线时变成醒目的「✓ 顶住」竖线 */
+            var markPath = 'M ' + rightRight + ' -132 L ' + rightRight + ' 132';
+            var touchOk = Math.abs(rightRight - halfContainer) < 2;
+            nodes.outerMarkRight.setAttribute('d', markPath);
+            nodes.outerMarkLeft.setAttribute('d', 'M ' + (-rightRight) + ' -132 L ' + (-rightRight) + ' 132');
+            nodes.outerMarkRight.setAttribute('stroke', touchOk ? COLORS.edgeLine : '#f0876f');
+            nodes.outerMarkLeft.setAttribute('stroke', touchOk ? COLORS.edgeLine : '#f0876f');
+
+            nodes.touchBadge.setAttribute('x', rightRight);
+            nodes.touchBadge.textContent = touchOk ? '✓ 正好顶住边缘' : '✗ 超出 ' + Math.round(rightRight - halfContainer) + 'px';
+            nodes.touchBadge.setAttribute('fill', touchOk ? COLORS.edgeLine : '#f0876f');
+
+            /* 中心距虚线标注 */
+            nodes.centerLineRight.setAttribute('x1', 0);
+            nodes.centerLineRight.setAttribute('x2', sideCenterDistance);
+            nodes.centerDistLabel.setAttribute('x', sideCenterDistance / 2);
+            nodes.centerDistLabel.textContent = '中心距 ' + Math.round(sideCenterDistance);
+
+            /* 底部两段拆解:从容器中心走到侧卡中心(蓝),再从侧卡中心走到它外沿(紫)=「半宽(投影后)」 */
+            nodes.segCenterLine.setAttribute('x1', 0);
+            nodes.segCenterLine.setAttribute('x2', sideCenterDistance);
+            nodes.segHalfLine.setAttribute('x1', sideCenterDistance);
+            nodes.segHalfLine.setAttribute('x2', rightRight);
+            nodes.segCenterLabel.setAttribute('x', sideCenterDistance / 2);
+            nodes.segCenterLabel.textContent = '中心距 ' + Math.round(sideCenterDistance);
+            nodes.segHalfLabel.setAttribute('x', sideCenterDistance + projectedHalf / 2);
+            nodes.segHalfLabel.textContent = '半宽(投影后) ' + Math.round(projectedHalf);
+        }
+
+        /* ---------- 步骤切换 + 补间动画 ---------- */
+        var currentStage = 0;
+        var animationId = null;
+
+        function formulaFor(index) {
+            var outerEdge = [1.5 * cardWidth, 1.5 * cardWidth - pullToCenterPx, halfContainer][index];
+            var steps = [
+                '外沿 = <b>1.5W</b> = 1.5×620 = <b>930</b>',
+                '外沿 = <b>1.5W − 拉伸</b> = 930 − 305 = <b>625</b>',
+                '外沿 = <b>(1.5W − 拉伸) × s</b> = 625 × 0.8 = <b>500 = 容器半宽</b>',
+            ];
+            var verdict = outerEdge > halfContainer + 1
+                ? '<span class="miss">超出 ' + Math.round(outerEdge - halfContainer) + 'px,溢出(红块)</span>'
+                : '<span class="hit">正好 = C/2,两侧顶到父元素边缘 ✓(此即 ceshi.html 方程的唯一解 pullToCenterPx = 1.5W − (C/2)/s = 305)</span>';
+            return steps[index] + ' → 与容器半宽 <b>500</b> 相比:' + verdict;
+        }
+
+        function renderStatic(index) {
+            renderSideCards(stages[index].sideCenterDistance, stages[index].visualScale);
+            document.getElementById('formula').innerHTML =
+                '<b>' + stages[index].label + '</b>  ' + formulaFor(index);
+            Array.prototype.forEach.call(
+                document.getElementById('stepButtons').children,
+                function (btn, i) { btn.classList.toggle('current', i === index); }
+            );
+        }
+
+        function goToStage(target) {
+            /* 用 rAF 在两个阶段量之间线性补间,变化过程可见 */
+            var from = stages[currentStage];
+            var to = stages[target];
+            var startTime = performance.now();
+            var duration = 500;
+            cancelAnimationFrame(animationId);
+
+            function frame(now) {
+                var t = Math.min(1, (now - startTime) / duration);
+                var ease = 1 - Math.pow(1 - t, 3); // easeOutCubic
+                var centerDistance = from.sideCenterDistance + (to.sideCenterDistance - from.sideCenterDistance) * ease;
+                var scale = from.visualScale + (to.visualScale - from.visualScale) * ease;
+                renderSideCards(centerDistance, scale);
+                if (t < 1) animationId = requestAnimationFrame(frame);
+                else renderStatic(target);
+            }
+            /* 公式与按钮先切,卡片动画跟上 */
+            document.getElementById('formula').innerHTML =
+                '<b>' + to.label + '</b>  ' + formulaFor(target);
+            Array.prototype.forEach.call(
+                document.getElementById('stepButtons').children,
+                function (btn, i) { btn.classList.toggle('current', i === target); }
+            );
+            animationId = requestAnimationFrame(frame);
+            currentStage = target;
+        }
+
+        /* ---------- 初始化 ---------- */
+        buildScene();
+        stages.forEach(function (stage, index) {
+            var btn = document.createElement('button');
+            btn.textContent = stage.label;
+            btn.addEventListener('click', function () { goToStage(index); });
+            document.getElementById('stepButtons').appendChild(btn);
+        });
+        renderStatic(0);
+    </script>
+</body>
+
+</html>

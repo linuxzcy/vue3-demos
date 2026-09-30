@@ -75,6 +75,16 @@ const router = createRouter({
       component: () => import("../views/PrintDualTablePage.vue"),
     },
     {
+      path: "/translate",
+      name: "Translate",
+      component: () => import("../views/TranslatePage.vue"),
+    },
+    {
+      path: "/translate-js",
+      name: "TranslateJs",
+      component: () => import("../views/TranslateJsPage.vue"),
+    },
+    {
       path: "/login",
       name: "Login",
       component: () => import("../views/LoginPage.vue"),
