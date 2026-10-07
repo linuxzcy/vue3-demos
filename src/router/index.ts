@@ -89,6 +89,11 @@ const router = createRouter({
       name: "Login",
       component: () => import("../views/LoginPage.vue"),
     },
+    {
+      path: "/driver-js",
+      name: "DriverJs",
+      component: () => import("../views/DriverJsPage.vue"),
+    },
   ],
 });
 

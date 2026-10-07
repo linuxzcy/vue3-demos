@@ -23,6 +23,7 @@ const navItems = [
   { path: "/translate", label: "谷歌翻译" },
   { path: "/translate-js", label: "整页翻译" },
   { path: "/login", label: "扫码登录" },
+  { path: "/driver-js", label: "分步引导" },
 ];
 
 const selectedKey = computed(() => route.path);
