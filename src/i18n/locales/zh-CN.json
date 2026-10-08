@@ -1,0 +1,34 @@
+{
+  "common": {
+    "appName": "Vue 演示合集",
+    "language": "语言",
+    "zh": "简体中文",
+    "en": "English",
+    "welcome": "欢迎回来，{name}！您有 {count} 条未读消息",
+    "addedToCart": "已加入购物车：{0} × {1}"
+  },
+  "menu": {
+    "chat": "消息发送",
+    "tree": "树形勾选",
+    "websocket": "WebSocket",
+    "sse": "SSE 流式",
+    "sseChatgpt": "ChatGPT 渲染",
+    "tinymce": "TinyMCE",
+    "wordCanvas": "Word 画布",
+    "amap": "高德地图",
+    "logisticsTrack": "物流轨迹",
+    "scrollSpy": "目录联动",
+    "excel": "Excel 解析",
+    "chunkUpload": "切片上传",
+    "logicflow": "工作流",
+    "printDualTable": "双表打印",
+    "translate": "谷歌翻译",
+    "translateJs": "整页翻译",
+    "login": "扫码登录",
+    "driverJs": "分步引导",
+    "tabCenter": "Tab 居中"
+  },
+  "doc": {
+    "title": "Vue 演示合集"
+  }
+}

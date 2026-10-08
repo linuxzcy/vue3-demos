@@ -1,0 +1,34 @@
+{
+  "common": {
+    "appName": "Vue Demos",
+    "language": "Language",
+    "zh": "简体中文",
+    "en": "English",
+    "welcome": "Welcome back, {name}! You have {count} unread messages",
+    "addedToCart": "Added to cart: {0} × {1}"
+  },
+  "menu": {
+    "chat": "Chat",
+    "tree": "Tree Check",
+    "websocket": "WebSocket",
+    "sse": "SSE Stream",
+    "sseChatgpt": "ChatGPT Render",
+    "tinymce": "TinyMCE",
+    "wordCanvas": "Word Canvas",
+    "amap": "Amap",
+    "logisticsTrack": "Logistics",
+    "scrollSpy": "Scroll Spy",
+    "excel": "Excel Parse",
+    "chunkUpload": "Chunk Upload",
+    "logicflow": "Workflow",
+    "printDualTable": "Dual Print",
+    "translate": "Translate",
+    "translateJs": "Page Translate",
+    "login": "QR Login",
+    "driverJs": "Guided Tour",
+    "tabCenter": "Tab Center"
+  },
+  "doc": {
+    "title": "Vue Demos"
+  }
+}
